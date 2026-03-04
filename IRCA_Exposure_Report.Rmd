@@ -4,10 +4,10 @@ subtitle: "A descriptive exposure-gradient analysis, 1982–2000"
 author: "Kai A. Sanchez P."
 date: " February 2026"
 output:
-  html_document:
-    toc: true
   pdf_document:
     toc: false
+  html_document:
+    toc: true
 fontsize: 11pt
 geometry: margin=1in
 header-includes:
@@ -21,6 +21,7 @@ header-includes:
   - \usepackage{adjustbox}
   - \usepackage{capt-of}
   - \usepackage[none]{hyphenat}
+  - \usepackage{pdflscape}
 ---
 
 ```{r setup, include=FALSE}
@@ -54,16 +55,11 @@ tab_tex <- function(name, caption = NULL){
   cat("\n\\par\\noindent\n")
   if (!is.null(caption)) cat("\\captionof{table}{", caption, "}\n", sep = "")
 
-  if (is_tabularray) {
-    cat(body, "\n")
-  } else {
-    # Use begingroup/endgroup (Pandoc-safe) instead of bare { ... }
-    cat("\\begingroup\\small\n")
-    cat("\\begin{adjustbox}{max width=\\linewidth}\n")
-    cat(body, "\n")
-    cat("\\end{adjustbox}\n")
-    cat("\\endgroup\n")
-  }
+  cat("\\begingroup\\footnotesize\n")
+  cat("\\begin{adjustbox}{max width=\\linewidth}\n")
+  cat(body, "\n")
+  cat("\\end{adjustbox}\n")
+  cat("\\endgroup\n")
 
   cat("\\par\n\n")
 }
@@ -91,387 +87,286 @@ stopifnot(dir.exists(fig_dir), dir.exists(tab_dir))
 
 # Executive Summary
 
-This project documents whether higher exposure to the 1986 Immigration Reform and Control Act (IRCA) is associated with changes in the occupational composition of immigrants admitted to the United States from Latin American origin countries between 1982 and 2000. The analysis uses a country–year panel (19 origins) and measures exposure intensity as IRCA legalizations during 1989–1992 relative to pre-IRCA admissions (1982–1985).
+This project builds a reproducible country–year panel (19 Latin American origins, 1982–2000) to document whether IRCA legalization intensity (1989–1992) is associated with changes in the recorded occupational composition of admissions.
 
-**Main findings:**
+**Headline finding**: the apparent blue-collar “share decline” during the IRCA surge is highly sensitive to denominator definition. When occupational shares exclude “no occupation” (known-occupation denominator), higher exposure is associated with a sizeable negative shift. When “no occupation” is included (full denominator), the association attenuates toward zero. This pattern implies that denominator/reporting mechanics are central to the measured composition change.
 
-- Higher IRCA exposure is associated with a decline in the blue-collar share among recorded occupations during 1989–1992: -3.6 pp per one-unit exposure (clustered SE 0.7 pp).
+**Interpretation posture**: this is a descriptive exposure-gradient analysis (not a causal design). Timing diagnostics show pre-patterns in event-study coefficients, so I interpret estimates as descriptive associations and emphasize robustness plus measurement decomposition.
 
-- The association is stable across common sensitivity checks (country trends, alternative weights, balanced panel restriction, leave-one-out, excluding Mexico, and window restrictions).
+**Deliverable quality**: results are generated end-to-end from raw Excel files using a single run.R pipeline that exports figures/tables/logs and a clean panel dataset.
 
-- Timing diagnostics are mixed: a linear pre-period trend test and pre-period placebo “fake-post” tests are small and imprecise, but an event-study joint test for pre-1988 coefficients rejects strongly (Wald $F(6,298)=13.54$, $p=1.38 \times 10^{-13}$). I therefore treat dynamic estimates as descriptive timing patterns and rely primarily on robustness and aggregated contrasts for interpretation.
+# Portfolio Exhibits
 
-- Results are sensitive to outcome construction: when “no occupation” is included in the denominator (“full denominator”), the blue-share association attenuates toward zero ($\approx -0.5$ pp; not statistically significant).
+- Dashboard (shares, “no occupation,” and levels)
 
-- A decomposition in levels and logs suggests the share decline reflects faster growth in denominators than the blue-collar numerator: blue-collar counts rise with exposure (+9,683), but total/known occupation counts rise more (+39k to +43k).
+- Headline estimate — Net vs Full denominator comparison (same sample)
 
-All results are reproducible from raw Excel inputs through a single `run.R` pipeline that exports tables, figures, logs, and a clean panel dataset.
+- Mechanism — numerator vs denominators (levels)
 
+- Robustness — leave-one-out influence check
+(Details and full regression panels are in the Appendix.)
 
-
-# Stakeholder takeaway.
-
-For monitoring and reporting, these results suggest that large legalization/processing surges can coincide with changes in recorded occupational composition—sometimes because denominators change (including shifts into “no occupation”), not because a category collapses in levels.  
-
-Recommendation: track three metrics together during surge windows: (1) blue-collar share among known occupations, (2) no-occupation share, and (3) underlying numerator/denominator counts. This helps distinguish genuine compositional change from measurement/recording shifts and supports capacity planning (processing staff, classification QA, and service delivery). 
-
+```{r fig-dashboard, fig.cap="Shares, no-occupation share, and counts by IRCA exposure group.", out.width="0.95\\linewidth", fig.pos="H"}
+include_fig_safe("fig_PORTFOLIO_dashboard.png")
+```
 
 
-# Research Question
 
-Do origin countries with higher IRCA legalization intensity display larger changes in the occupational composition of admissions during the 1989–1992 legalization surge window?
+# Research Question and Data
 
-Rather than a binary treated/control design, I use cross-country variation in exposure intensity:
+**Question**: Do origin countries with higher IRCA legalization intensity display larger changes in the occupational composition of admissions during 1989–1992?
+
+Exposure (country-level):
 
 \[
 \text{Exposure}=\frac{\text{IRCA legalizations (1989–1992)}}{\text{Pre-IRCA admissions (1982–1985)}}.
 \]
 
-Primary outcomes are occupational shares: blue-collar, agriculture, manual, services, white-collar, and “no occupation” (missing/unknown occupation category). I also analyze class-of-admission shares and selected demographic composition measures as exploratory outcomes.
+**Data sources**: INS Statistical Yearbooks / OHSS tables on occupation, class of admission, gender/age, and adjustments vs new arrivals.
+
+**Design**: descriptive exposure-gradient panel regressions with country and year fixed effects; clustered SE at the origin-country level.
 
 
 
-# Data and Pipeline
 
-Data come from INS Statistical Yearbooks (now OHSS), organized into four raw inputs:
+# Main Result: Denominator Sensitivity
 
-- occupation by origin–year
-
-- class of admission by origin–year
-
-- gender/age by origin–year
-
-- adjustments of status vs new arrivals by origin–year
-
-Pipeline features:
-
-- Automatic detection of raw Excel files 
-
-- Multi-sheet ingestion using a dynamic year parser  
-
-- Construction of country–year panel (1982–2000)  
-
-- Creation of derived shares and treatment intensity 
-
-- Missingness diagnostics  
-
-- Reproducible export of all tables (.tex) and figures (.png)  
-
-Final dataset:
-
-- 361 country–year observations, 19 origins, 1982–2000.
-
-Data QA gates: uniqueness of country–year keys after merges, non-negative counts, and share variables constrained to [0,1]. The run aborts if these checks fail.
-
-
+The main portfolio result is that the blue-share association depends strongly on whether “no occupation” is excluded (net denominator) or included (full denominator). To avoid sample-driven artifacts, the headline comparison uses the same set of country–years for both outcomes.
 
 ```{r, results='asis'}
-safe_input_table("tab_missing_overall.tex",
-  caption = "Missingness by variable at the country–year level."
+safe_input_table(
+  "tab_MAIN_net_vs_full_denom.tex",
+  caption = "Blue share with Net vs Full denominator (same sample)."
 )
 ```
 
-```{r, results='asis'}
-safe_input_table("tab_coverage_country.tex",
-  caption = "Coverage by country for key variables."
-)
-```
+Because pre-trend diagnostics reject in an event-study test (Appendix E), I treat $\beta$ as a descriptive exposure-gradient summary rather than a causal DiD effect.
 
-
-# How to Run
-
-1. Place the raw Excel inputs in `data_raw/`.
-2. “Run the pipeline: `Rscript run.R`”
-
-3. Render this report
-
-# Project Structure
-
-project/
-  data_raw/              # raw Excel inputs
-  data_clean/
-    panel.rds            # cleaned country-year panel
-  outputs/
-    tables/              # exported LaTeX tables
-    figures/             # exported figures
-    logs/                # run log + sessionInfo + summary
-  run.R                  # pipeline script
-  paper.Rmd              # report
-
-# Modeling Approach (Descriptive Association)
-
-I estimate descriptive association models that summarize how outcomes co-move with exposure during 1989–1992, controlling for country fixed differences and common year shocks. This is useful for documenting exposure gradients and timing patterns; it is not a randomized design, so results are interpreted as associations.
-
-
-\[
-Y_{c,t} = \beta \left(\text{Exposure}_{c}\times \text{Post}_{t}\right) + \alpha_{c} + \delta_{t} + \varepsilon_{c,t}.
-\]
-
-
-Where:
-
-- $\alpha_c$ = country fixed effects
-
-- $\delta_t$ = year fixed effects
-
-- Post = 1989–1992
-
-- SE clustered at country level
-
-Net specifications include AdjShare to absorb mechanical processing variation during IRCA.
-
-# Main Results
-
-Tables 3–4 show the Total specification (no adj_share). Tables 5–6 show the Net specification (includes adj_share).
-
-```{r, results='asis'}
-safe_input_table("tab_main_total_A.tex",
-  caption = "Baseline TWFE (Total) — Panel A: occupation shares (Blue–White)."
-)
-safe_input_table("tab_main_total_B.tex",
-  caption = "Baseline TWFE (Total) — Panel B: remaining outcomes (No-Occ + class shares)."
-)
-```
-
-\newpage
-
-```{r, results='asis'}
-safe_input_table("tab_main_net_A.tex",
-  caption = "Baseline TWFE (Net) — Panel A: occupation shares (Blue–White)."
-)
-safe_input_table("tab_main_net_B.tex",
-  caption = "Baseline TWFE (Net) — Panel B: remaining outcomes (No-Occ + class shares)."
-)
-```
-
-
-Key estimate (Net, blue-collar share): Exposure × Post = -0.036\*\*\* (SE 0.007). Interpreted descriptively, a one-unit higher exposure is associated with a 3.6 pp lower blue-collar share during 1989–1992, relative to a mean blue share of 0.342. Other occupational shifts include higher agricultural share (+0.029) and lower “no occupation” share (-0.025), alongside changes in family and humanitarian admission shares (exploratory).
+**Practical implication**: during large legalization/processing surges, composition metrics based on “known occupations only” can move sharply even when the underlying category counts rise — because denominators (including missing/unknown occupation mass) change.
 
 
 
 
-# Sensitivity Checks
+# Mechanism: Numerator vs Denominator Growth
 
-The blue-share association is stable across country trends, weights, balanced panel restrictions, excluding Mexico, and leave-one-country-out influence analysis.
-
-
-
-
-```{r, results='asis'}
-safe_input_table("tab_robust_extra_blue.tex",
-  caption = "Extra sensitivity checks: dropping high-missing years, dropping incomplete countries, and 1982–1995 window (blue share, Net)."
-)
-```
-
-
-
-```{r, results='asis'}
-safe_input_table("tab_blue_trends_robustness.tex",
-  caption = "Robustness to country-specific linear trends (blue share)."
-)
-```
+To understand why a share can fall even when counts rise, I decompose the association into numerator and denominator components (levels). The pattern is consistent with denominator growth outpacing numerator growth, rather than a collapse in blue-collar admissions.
 
 
 
 
-```{r, results='asis'}
-safe_input_table("tab_spec_compare_blue.tex",
-  caption = "Specification comparison: baseline, trends, weights, balanced panel (blue share, Net)."
-)
-```
-
-
-```{r, results='asis'}
-safe_input_table("tab_balanced_blue.tex",
-  caption = "Balanced panel restriction (blue share, Net)."
-)
-```
-
-```{r fig-loo-blue, fig.cap="Leave-one-country-out sensitivity: estimated IRCA × Post coefficient (blue share, Net).", out.width="0.85\\linewidth", fig.pos="H"}
-include_fig_safe("fig_loo_blue_net.png")
-```
-
-The leave-one-out plot is an influence diagnostic: it checks whether the headline association is driven by any single origin country. The coefficient remains negative and stays in a narrow band around the baseline when each country is dropped in turn.
-
-# Denominator Sensitivity and Decomposition
-
-A key limitation is that results depend on how occupational shares are defined when there is a large “no occupation” mass.
-
-- Using the Net denominator (known occupations only), the association is -0.036\*\*\* (SE 0.007).
-
-- Using the Full denominator (known + unknown/no occupation), the association attenuates to $\approx -0.005$ (not significant).
-
-```{r, results='asis'}
-safe_input_table("tab_full_denom_blue.tex",
-  caption = "Denominator sensitivity: blue share using net (known occupations) vs full (known + no occupation) denominators."
-)
-```
-
-```{r, results='asis'}
-safe_input_table("tab_noocc_did.tex",
-  caption = "IRCA × Post associations on the no-occupation share (Net sample)."
-)
-```
-
-To understand the mechanics behind a share result, I decompose the association into numerator and denominator components (levels and logs):
-
-- Blue-collar counts increase with exposure in the post period (+9,683\*\*\*).
-
-- Known-occupation and total-occupation counts increase much more (+39k to +43k*).
-
-
-```{r, results='asis'}
-safe_input_table("tab_decomp_levels_A.tex",
-  caption = "Decomposition — Panel A: levels (counts)."
-)
-safe_input_table("tab_decomp_levels_B.tex",
-  caption = "Decomposition — Panel B: log(1+x) outcomes."
-)
-```
-
-
-```{r fig-decomp-levels, fig.cap="Decomposition (levels): IRCA × Post associations on blue counts and denominators.", out.width="0.92\\linewidth", fig.pos="H"}
+```{r fig-decomp-levels, fig.cap="IRCA × Post associations on numerator (blue counts) and denominators (levels).", out.width="0.92\\linewidth", fig.pos="H"}
 include_fig_safe("fig_decomp_levels_only.png")
 ```
 
 
-```{r fig-decomp-logs, fig.cap="Decomposition (log(1+x)): IRCA × Post associations in proportional terms.", out.width="0.92\\linewidth", fig.pos="H"}
+
+# Denominator Channel Evidence: “No Occupation”
+
+A key diagnostic for denominator mechanics is whether the “no occupation” category shifts differentially by exposure during the surge.
+
+
+
+```{r fig-noocc-trends, fig.cap="No-occupation share over time by IRCA exposure group.", out.width="0.90\\linewidth", fig.pos="H"}
+include_fig_safe("fig_noocc_trends_by_exposure.png")
+```
+
+
+# Robustness
+
+The negative net-denominator association is not driven by a single origin country.
+
+
+```{r fig-loo, fig.cap="Leave-one-country-out influence on the IRCA × Post coefficient (net denominator).", out.width="0.90\\linewidth", fig.pos="H"}
+include_fig_safe("fig_loo_blue_net.png")
+```
+
+
+**Small-cluster inference note**: with 19 clusters, conventional clustered SE can be fragile. I therefore include a wild cluster bootstrap p-value for the baseline specification (Appendix contains full robustness tables).
+
+```{r, results='asis'}
+safe_input_table(
+  "tab_wildboot_blue_net.tex",
+  caption = "Small-cluster inference add-on: Wild cluster bootstrap test for IRCA × Post (baseline net specification)."
+)
+```
+
+Bootstrap computed on an algebraically equivalent lm-with-dummies specification due to package compatibility.
+
+# Magnitudes
+
+Because the headline depends on denominator definition, magnitudes are reported for both constructions.
+
+
+
+
+```{r, results='asis'}
+safe_input_table("tab_magnitudes_blue_NET.tex",
+  caption = "Standardized effect sizes for net-denominator blue share (same-sample comparison)."
+)
+safe_input_table("tab_magnitudes_blue_FULLDEN.tex",
+  caption = "Standardized effect sizes for full-denominator blue share (same-sample comparison)."
+)
+```
+
+
+
+# Stakeholder and Decision context (DA framing)
+
+## Intended stakeholder and decision use
+
+**Primary stakeholder:** an admissions reporting / operations analytics team (e.g., an OHSS-style reporting unit or an internal USCIS analytics team).
+
+**Decision use:** during surge windows (large legalization/processing events), this analysis supports:
+
+- **Monitoring:** detect whether composition changes reflect real shifts vs. reporting/denominator changes.
+
+- **Quality assurance:** flag periods when “no occupation” rises and occupation coding may be less consistent.
+
+- **Capacity planning:** anticipate downstream staffing needs if denominator growth reflects processing/recording expansion.
+
+## Metrics specifications (dashboard KPIs)
+
+All shares are in $[0,1]$ and should be displayed as percentage points in dashboards. For each origin country \(c\) and year \(t\):
+
+- **Blue share (net denominator)**  
+  \[
+  \text{BlueShare}_{ct}^{net}=\frac{\text{BlueCollarNonFarm}_{ct}}{\text{OccKnown}_{ct}}
+  \]
+  where  
+  \[
+  \text{OccKnown}_{ct}=\text{WhiteHigh}_{ct}+\text{WhiteSupport}_{ct}+\text{BlueCollarNonFarm}_{ct}+\text{Agriculture}_{ct}+\text{Services}_{ct}.
+  \]
+
+- **Blue share (full denominator)**  
+  \[
+  \text{BlueShare}_{ct}^{full}=\frac{\text{BlueCollarNonFarm}_{ct}}{\text{OccKnown}_{ct}+\text{NoOccupation}_{ct}}.
+  \]
+
+- **No-occupation share (full denominator)**  
+  \[
+  \text{NoOccShare}_{ct}=\frac{\text{NoOccupation}_{ct}}{\text{OccKnown}_{ct}+\text{NoOccupation}_{ct}}.
+  \]
+
+In the pipeline (run.R), these correspond to blue_share (net), blue_fullden (full), and noocc_share.
+
+**Why report all three together:** 
+
+\(\text{BlueShare}^{net}\) can move sharply if the **denominator changes** (e.g., classification shifts into “no occupation” or changes in reporting coverage). Reporting \(\text{BlueShare}^{full}\) and \(\text{NoOccShare}\) alongside the net share helps distinguish **true compositional change** from **measurement/reporting mechanics**.
+
+# How to Run
+
+1.  Put the raw Excel inputs in data_raw/.
+
+2.  Open `irca-composition.Rproj`  
+
+3.  Run `Rscript run.R` (or Source `run.R`) 
+
+4.  Render `paper.Rmd`
+
+5.  Outputs are written to:
+
+  - outputs/tables/, outputs/figures/, outputs/logs/, and data_clean/panel.rds
+
+
+
+
+
+
+# Appendix
+
+## Appendix A: Data QA (missingness and coverage)
+
+```{r, results='asis'}
+safe_input_table("tab_missing_overall.tex",
+caption = "Missingness by variable at the country–year level.")
+safe_input_table("tab_coverage_country.tex",
+                 caption = "Coverage by origin country for key variables (share of years observed)."
+)
+```
+
+
+## Appendix B: Baseline regression panels
+
+
+```{r, results='asis'}
+safe_input_table("tab_main_total_A.tex",
+caption = "Baseline TWFE (Total): occupation shares (Blue–White).")
+safe_input_table("tab_main_total_B.tex",
+caption = "Baseline TWFE (Total): no-occupation share and class-of-admission shares.")
+safe_input_table("tab_main_net_A.tex",
+caption = "Baseline TWFE (Net): occupation shares (Blue–White), controlling for adjustment share.")
+safe_input_table("tab_main_net_B.tex",
+caption = "Baseline TWFE (Net): no-occupation share and class-of-admission shares, controlling for adjustment share.")
+```
+
+## Appendix C: Additional robustness tables
+
+```{r, results='asis'}
+safe_input_table("tab_spec_compare_blue.tex",
+caption = "Specification comparison (blue share, net): baseline vs trends, weights, and balanced panel.")
+safe_input_table("tab_blue_trends_robustness.tex",
+caption = "Robustness to origin-specific linear trends (blue share).")
+safe_input_table("tab_robust_extra_blue.tex",
+caption = "Additional sensitivity checks (blue share, net): drop high-missing years, drop incomplete-coverage countries, and restrict window.")
+safe_input_table("tab_weights_blue.tex",
+caption = "Weighted specifications (blue share, net): admissions weights and occupation-count weights.")
+safe_input_table("tab_balanced_blue.tex",
+caption = "Balanced-panel restriction (blue share, net).")
+safe_input_table(
+  "tab_alt_intensity_blue.tex",
+  caption = "Alternative exposure construction and Mexico exclusion (blue share, net)."
+)
+```
+
+
+## Appendix D: Decomposition tables + log plot
+
+```{r, results='asis'}
+safe_input_table("tab_decomp_levels_A.tex",
+caption = "Decomposition (levels): IRCA × Post associations on blue counts and denominators.")
+safe_input_table("tab_decomp_levels_B.tex",
+caption = "Decomposition (log(1+x)): proportional associations on blue counts and denominators.")
+```
+
+```{r fig-decomp-logs, fig.cap="Decomposition in log(1+x): proportional associations on numerator and denominators.", out.width="0.90\\linewidth", fig.pos="H"}
 include_fig_safe("fig_decomp_logs_only.png")
 ```
 
 
-Overall, the blue-collar share decline reflects denominator growth outpacing numerator growth, rather than a contraction of blue-collar admissions in levels.
+## Appendix E: Timing diagnostics (interpretation check)
 
-# Economic Magnitudes
-
-Exposure varies across origins (mean 1.476, SD 2.119). Using the baseline coefficient (-0.036), a 1 SD difference in exposure corresponds to:
-
-\[
-\Delta Y \;=\; \beta \cdot SD(\text{Exposure})
-\;=\; (-0.036)(2.119)
-\;=\; -0.0763
-\;\Rightarrow\; -7.63 \text{ pp}.
-\]
-\[
-\text{As \% of mean}(Y):\quad
-\frac{\Delta Y}{\bar{Y}}\times 100
-\;=\;
-\frac{-0.0763}{0.342}\times 100
-\;\approx\; -22.3\%.
-\]
-
-These magnitudes should be interpreted alongside denominator sensitivity and timing diagnostics.
-
-```{r, results='asis'}
-safe_input_table("tab_magnitudes_blue.tex",
-  caption = "Standardized magnitudes for the baseline Net specification (blue share)."
-)
-```
-
-```{r fig-std-associations, fig.cap="Standardized association sizes (1 SD and IQR exposure) for the baseline Net specification.", out.width="0.85\\linewidth", fig.pos="H"}
-include_fig_safe("fig_std_effects_blue.png")
-```
-
-# Timing Diagnostics (Interpretation Check)
-
-These checks help interpret the timing of the exposure-gradient patterns. They are not used to claim causal effects.
-
-```{r fig-es-blue, fig.cap="Event-study: exposure-by-year associations for blue-collar share (relative to 1988).", out.width="0.85\\linewidth", fig.pos="H"}
+```{r fig-event-study, fig.cap="Event-study: exposure-by-year associations for blue-collar share (relative to 1988).", out.width="0.90\\linewidth", fig.pos="H"}
 include_fig_safe("fig_es_blue_total.png")
 ```
 
-Formal pre-period regressions show no significant exposure-driven linear trends before 1989, but event-study pre-coefficients are jointly significant; I interpret dynamic estimates as descriptive and rely on sensitivity checks.
-
 ```{r, results='asis'}
-safe_input_table("tab_formal_pretrend_test.tex",
-  caption = "Linear pretrend test (pre-period only): exposure × time slope."
-)
+safe_input_table("tab_wald_pretrends_es_blue_total.tex",
+caption = "Event-study pretrend diagnostic: Wald test of joint significance for pre-1988 coefficients.")
+
 ```
 
-
-```{r, results='asis'}
-safe_input_table("tab_placebos.tex",
-  caption = "Placebo tests (pre-period only): fake post dates 1986 and 1987."
-)
-```
-
-
-
-```{r fig-pretrend-groups, fig.cap="Pre-IRCA group means (1982–1988): blue-collar share by exposure group.", out.width="0.85\\linewidth", fig.pos="H"}
+```{r fig-pretrend-groups, fig.cap="Pre-IRCA group means (1982–1988): blue-collar share by IRCA exposure group.", out.width="0.90\\linewidth", fig.pos="H"}
 include_fig_safe("fig_pretrend_groups.png")
 ```
 
-
-
-# Heterogeneity by Exposure Level
-
-Exposure quartiles reveal non-linear associations.
-
-```{r, results='asis'}
-safe_input_table("tab_bins_blue.tex",
-  caption = "Heterogeneity by exposure quartile: post-period associations with blue share (Net)."
-)
+```{r fig-early-late, fig.cap="Early vs late post-period associations on blue-collar share (exposure-gradient).", out.width="0.90\\linewidth", fig.pos="H"}
+include_fig_safe("fig_early_late_blue.png")
 ```
 
 
+Additional timing checks (linear pretrend regression and placebo fake-post tests) are available in logs/tables but omitted from the PDF for brevity.
 
-```{r fig-bins, fig.cap="Heterogeneity by exposure quartile (Net): post associations on blue share with 95\\% CI.", out.width="0.85\\linewidth", fig.pos="H"}
-include_fig_safe("fig_bins_blue.png")
-```
+## Appendix F: Exploratory analyses
 
-# Mechanism Exploration
 
-I examine which dimensions co-move with exposure during 1989–1992 (exploratory; interpretation depends on data availability by outcome).
-
-```{r, results='asis'}
-safe_input_table("tab_mechanisms_summary_A.tex",
-  caption = "Mechanism scan (exploratory) — Panel A: core outcomes."
-)
-safe_input_table("tab_mechanisms_summary_B.tex",
-  caption = "Mechanism scan (exploratory) — Panel B: secondary outcomes."
-)
-```
-
-```{r fig-mechanisms, fig.cap="Mechanism scan: Exposure × Post associations across outcomes (exploratory).", out.width="0.85\\linewidth", fig.pos="H"}
+```{r fig-mechanism-scan, fig.cap="Exposure × Post associations across outcomes (exploratory).", out.width="0.90\\linewidth", fig.pos="H"}
 include_fig_safe("fig_mechanisms_coefplot.png")
 ```
 
-These coefficients help prioritize monitoring and follow-up checks (e.g., if adjustment share co-moves with exposure, validate whether processing capacity or classification practices changed during 1989–1992).
 
+## Appendix G: QA artifact (residual sanity check)
 
-# Limitations
-
-- Exposure is time-invariant by construction; inference relies on cross-sectional intensity differences plus fixed effects.
-
-- Timing diagnostics are mixed (event-study pre-coefficients jointly significant), so dynamic interpretation should be cautious. 
-
-- Occupational coding contains a large unknown/no-occupation mass; denominator choice materially changes estimates.
-
-- Cluster count is small (19 origins); the paper complements inference with sensitivity and influence diagnostics.
-
-These are acknowledged as areas for future refinement.
-
-# Reproducibility
-
-To reproduce results end-to-end: run Rscript run.R and then render paper.Rmd.
-
-Outputs:
-
-- Tables → outputs/tables/
-
-- Figures → outputs/figures/
-
-- Logs → outputs/logs/
-
-- Clean panel → data_clean/panel.rds
-
-
-
-# Appendix: Residual sanity check
-
-The residual-by-year plot is a basic sanity check (mean residuals are mechanically near zero under fixed effects) and is included only as a QA artifact.
-
-```{r fig-resid-year, fig.cap="Residual sanity check: mean residual by year (baseline Net, blue share).", out.width="0.85\\linewidth", fig.pos="H"}
+```{r fig-residuals-year, fig.cap="Mean residual by year (baseline net specification).", out.width="0.90\\linewidth", fig.pos="H"}
 include_fig_safe("fig_residuals_by_year_blue.png")
 ```
 
