@@ -114,6 +114,8 @@ include_fig_safe("fig_PORTFOLIO_dashboard.png")
 
 # Research Question and Data
 
+The input spreadsheets in data_raw/ were compiled by the author from publicly available INS Statistical Yearbooks. The report uses only the series required for this analysis (occupation, class of admission, gender/age, adjustments vs new arrivals). See Sources section for publication references.
+
 **Question**: Do origin countries with higher IRCA legalization intensity display larger changes in the occupational composition of admissions during 1989–1992?
 
 Exposure (country-level):
@@ -268,7 +270,9 @@ In the pipeline (run.R), these correspond to blue_share (net), blue_fullden (ful
   - outputs/tables/, outputs/figures/, outputs/logs/, and data_clean/panel.rds
 
 
+# Sources
 
+- U.S. Immigration and Naturalization Service (INS). *Statistical Yearbook of the Immigration and Naturalization Service*, various years (occupation and admissions tables).
 
 
 
