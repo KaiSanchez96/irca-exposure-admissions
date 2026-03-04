@@ -6,15 +6,6 @@
 # - Exports tables (.tex) and figures (.png)
 # - Writes logs + panel snapshot (.rds)
 #
-# FIXES INCLUDED:
-#  1) panel_fd (full denom) created BEFORE it is used
-#  2) removed duplicate fe_blue_fullden definitions
-#  3) magnitudes function generalized (works for blue_share and blue_fullden)
-#  4) Net vs Full comparison uses the SAME sample (cmp)
-#  5) share denominators guarded consistently
-#  6) event-study pretrend Wald test made more robust
-#  7) exposure-group cutoff logged once
-#  8) optional deps (patchwork, fwildclusterboot) handled safely
 ############################################################
 
 #### 0) Libraries ####
@@ -54,7 +45,7 @@ save_plot <- function(p, path, w=7, h=4.5){
   ggplot2::ggsave(path, plot = p, width = w, height = h, dpi = 300)
 }
 
-#### 0.2) General magnitudes writer (works for any yvar) ####
+#### 0.2) General magnitudes writer ####
 write_magnitudes <- function(df, model, yvar,
                              out_table,
                              out_plot,
@@ -130,7 +121,7 @@ cat("Using files:\n",
 
 stopifnot(file.exists(path_occ), file.exists(path_gender), file.exists(path_class), file.exists(path_adj))
 
-#### 2) Helper: read all sheets with year from sheet name ####
+#### 2) Helper ####
 read_all_sheets <- function(path) {
   sheets <- excel_sheets(path)
   map_dfr(sheets, function(s) {
@@ -271,7 +262,7 @@ saveRDS(panel, "data_clean/panel.rds")
 panel_total <- panel |> filter(!is.na(irca_intensity), !is.na(post))
 panel_net   <- panel_total |> filter(!is.na(adj_share))
 
-# ---- Full-denominator dataset (MUST exist before use) ----
+# ---- Full-denominator dataset ----
 panel_fd <- panel |>
   mutate(
     occ_total = occ_known + no_occupation,
@@ -566,7 +557,7 @@ cat("Baseline correlation: mean blue_share (1982–1985) ~ IRCA intensity\n\n")
 print(summary(baseline_lm))
 sink()
 
-#### PORTFOLIO DASHBOARD FIGURE (1 page) ####
+#### DASHBOARD FIGURE ####
 dash_df <- panel |>
   filter(year %in% 1982:2000) |>
   mutate(
@@ -611,7 +602,7 @@ p4 <- ggplot(dash_df, aes(x=year, y=occ_total, color=irca_group)) +
        title="D) Total occupations (known + no-occ)") +
   theme_bw() + theme(legend.position="bottom")
 
-# Combine via patchwork (optional; if missing, save separate)
+# Combine via patchwork
 if (!requireNamespace("patchwork", quietly = TRUE)) {
   warning("Package 'patchwork' not installed. Saving dashboard panels separately.")
   save_plot(p1, "outputs/figures/fig_PORTFOLIO_dash_A.png", w=7, h=4.6)
@@ -1370,7 +1361,7 @@ if (requireNamespace("fwildclusterboot", quietly = TRUE) &&
   set.seed(12345)
   dqrng::dqset.seed(12345)
   
-  # Use the EXACT same estimation sample as fe_blue_net
+
   dat_wb <- dat_blue_net |>
     dplyr::mutate(
       country = factor(country),
@@ -1389,7 +1380,7 @@ if (requireNamespace("fwildclusterboot", quietly = TRUE) &&
   # Wild cluster bootstrap on the interaction coefficient, clustered by country
   wb <- fwildclusterboot::boottest(
     object  = lm_fe,
-    clustid = "country",                 # for lm, column name works well
+    clustid = "country",                 
     param   = "irca_intensity:post",
     B       = 4999,
     type    = "rademacher"
