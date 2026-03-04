@@ -1,10 +1,20 @@
 ############################################################
-# run.R — IRCA project (reproducible pipeline)
+# run.R — IRCA project (FIXED + Portfolio-forward)
 # - Auto-detects raw Excel files
 # - Builds panel from raw files
 # - Runs main FE models + robustness + portfolio add-ons
 # - Exports tables (.tex) and figures (.png)
 # - Writes logs + panel snapshot (.rds)
+#
+# FIXES INCLUDED:
+#  1) panel_fd (full denom) created BEFORE it is used
+#  2) removed duplicate fe_blue_fullden definitions
+#  3) magnitudes function generalized (works for blue_share and blue_fullden)
+#  4) Net vs Full comparison uses the SAME sample (cmp)
+#  5) share denominators guarded consistently
+#  6) event-study pretrend Wald test made more robust
+#  7) exposure-group cutoff logged once
+#  8) optional deps (patchwork, fwildclusterboot) handled safely
 ############################################################
 
 #### 0) Libraries ####
@@ -44,25 +54,24 @@ save_plot <- function(p, path, w=7, h=4.5){
   ggplot2::ggsave(path, plot = p, width = w, height = h, dpi = 300)
 }
 
-#### 0.2) Single magnitudes writer ####
-write_magnitudes_blue <- function(panel_net, fe_blue_net,
-                                  out_table = "outputs/tables/tab_magnitudes_blue.tex",
-                                  out_plot  = "outputs/figures/fig_std_effects_blue.png") {
+#### 0.2) General magnitudes writer (works for any yvar) ####
+write_magnitudes <- function(df, model, yvar,
+                             out_table,
+                             out_plot,
+                             caption = "Economic magnitudes") {
   
-  expo_vec <- panel_net %>%
-    dplyr::distinct(country, irca_intensity) %>%
-    dplyr::pull(irca_intensity)
+  stopifnot(yvar %in% names(df))
+  expo_vec <- df %>%
+    distinct(country, irca_intensity) %>%
+    pull(irca_intensity)
   
   expo_vec <- expo_vec[is.finite(expo_vec)]
   expo_sd  <- sd(expo_vec, na.rm = TRUE)
   expo_iqr <- IQR(expo_vec, na.rm = TRUE)
   
-  b_net <- unname(coef(fe_blue_net)["irca_intensity:post"])
-  blue_mean_net <- mean(panel_net$blue_share, na.rm = TRUE)
+  b <- unname(coef(model)["irca_intensity:post"])
+  y_mean <- mean(df[[yvar]], na.rm = TRUE)
   
-  # Effects:
-  # - pp: 100 * (effect in share units)
-  # - % of mean: (effect in share units / mean share) * 100
   magnitudes <- tibble::tibble(
     Magnitude = c("Per 1 unit exposure",
                   "Per 1 SD exposure",
@@ -70,31 +79,30 @@ write_magnitudes_blue <- function(panel_net, fe_blue_net,
                   "As % of mean(Y): 1 SD",
                   "As % of mean(Y): IQR"),
     `Effect (pp / %)` = c(
-      100 * b_net,
-      100 * b_net * expo_sd,
-      100 * b_net * expo_iqr,
-      (b_net * expo_sd)  / blue_mean_net * 100,
-      (b_net * expo_iqr) / blue_mean_net * 100
+      100 * b,
+      100 * b * expo_sd,
+      100 * b * expo_iqr,
+      (b * expo_sd)  / y_mean * 100,
+      (b * expo_iqr) / y_mean * 100
     )
   )
   
   tab_mag <- knitr::kable(
     magnitudes,
     format = "latex", booktabs = TRUE, digits = 2,
-    caption = "Economic magnitudes for the baseline Net specification (blue-collar share)."
+    caption = caption
   )
   write_tex(tab_mag, out_table)
   
   plot_mag <- tibble::tibble(
     scale = c("1 SD exposure","IQR exposure"),
-    pp = c(100 * b_net * expo_sd, 100 * b_net * expo_iqr)
+    pp = c(100 * b * expo_sd, 100 * b * expo_iqr)
   )
   
   p_mag <- ggplot(plot_mag, aes(x = scale, y = pp)) +
     geom_col() +
     geom_hline(yintercept = 0, linetype="dashed") +
-    labs(x=NULL, y="Effect on blue-collar share (pp)",
-         title="Standardized magnitudes (baseline Net)") +
+    labs(x=NULL, y="Effect (pp)", title=caption) +
     theme_bw()
   
   save_plot(p_mag, out_plot, w=6.5, h=4)
@@ -103,7 +111,6 @@ write_magnitudes_blue <- function(panel_net, fe_blue_net,
 }
 
 #### 1) File paths  ####
-
 find_one <- function(pattern){
   hits <- list.files(".", pattern = pattern, recursive = TRUE, full.names = TRUE)
   if (length(hits) == 0) stop("No se encontró archivo con patrón: ", pattern)
@@ -124,7 +131,6 @@ cat("Using files:\n",
 stopifnot(file.exists(path_occ), file.exists(path_gender), file.exists(path_class), file.exists(path_adj))
 
 #### 2) Helper: read all sheets with year from sheet name ####
-
 read_all_sheets <- function(path) {
   sheets <- excel_sheets(path)
   map_dfr(sheets, function(s) {
@@ -135,7 +141,6 @@ read_all_sheets <- function(path) {
 }
 
 #### 3) Load raw files ####
-
 occ_raw    <- read_all_sheets(path_occ)
 gender_raw <- read_all_sheets(path_gender)
 class_raw  <- read_all_sheets(path_class)
@@ -144,7 +149,6 @@ adj_raw    <- read_excel(path_adj) |> clean_names()
 #### 4) Construct panels ####
 
 ## 4A) Occupations
-
 occ <- occ_raw |>
   rename(country = x1) |>
   mutate(
@@ -152,12 +156,11 @@ occ <- occ_raw |>
     occ_known = white_high + white_support + blue_collar_non_farm + agriculture + services,
     blue_share  = if_else(occ_known > 0, blue_collar_non_farm/occ_known, NA_real_),
     serv_share  = if_else(occ_known > 0, services/occ_known, NA_real_),
-    noocc_share = if_else(occ_known + no_occupation > 0,
+    noocc_share = if_else((occ_known + no_occupation) > 0,
                           no_occupation/(occ_known + no_occupation), NA_real_)
   )
 
 ## 4B) Class of admission + IRCA share
-
 class <- class_raw |>
   rename(country = x1) |>
   mutate(
@@ -169,7 +172,6 @@ class <- class_raw |>
   )
 
 ## 4C) Baseline IRCA intensity: (1989–92 legalizations) / (1982–85 admissions)
-
 irca_intensity <- class |>
   group_by(country) |>
   summarise(
@@ -180,7 +182,6 @@ irca_intensity <- class |>
   )
 
 ## 4D) Adjustments vs New Arrivals
-
 adj_header <- adj_raw[1,]
 adj_data   <- adj_raw[-1,] |>
   rename(country = x1) |>
@@ -217,7 +218,6 @@ adj_panel <- adj_long_vals |>
   )
 
 ## 4E) Gender panel: male share (country-year)
-
 gender <- gender_raw |>
   rename(country = x1, sex = x2) |>
   mutate(country = str_trim(country), sex = str_trim(sex))
@@ -237,6 +237,13 @@ gender_cty <- gender |>
 
 #### 5) Merge master panel + derived vars ####
 
+# exposure median cutoff for groups (log it once)
+expo_median <- median(irca_intensity$irca_intensity, na.rm = TRUE)
+writeLines(
+  paste0("Exposure median cutoff used for irca_group = ", signif(expo_median, 6)),
+  "outputs/logs/exposure_cutoff.txt"
+)
+
 panel <- occ |>
   left_join(adj_panel,      by = c("country","year")) |>
   left_join(class,          by = c("country","year")) |>
@@ -244,12 +251,15 @@ panel <- occ |>
   left_join(irca_intensity, by = "country") |>
   mutate(
     post         = if_else(year %in% 1989:1992, 1L, 0L),
-    white_share  = (white_high + white_support) / occ_known,
-    ag_share     = agriculture / occ_known,
-    manual_share = (blue_collar_non_farm + agriculture) / occ_known,
-    irca_group   = if_else(irca_intensity >= median(irca_intensity, na.rm = TRUE),
-                           "High IRCA", "Low IRCA"),
-    t = year - min(year, na.rm = TRUE),
+    
+    # guarded denominators
+    white_share  = if_else(occ_known > 0, (white_high + white_support) / occ_known, NA_real_),
+    ag_share     = if_else(occ_known > 0, agriculture / occ_known, NA_real_),
+    manual_share = if_else(occ_known > 0, (blue_collar_non_farm + agriculture) / occ_known, NA_real_),
+    
+    irca_group   = if_else(irca_intensity >= expo_median, "High IRCA", "Low IRCA"),
+    t            = year - min(year, na.rm = TRUE),
+    
     fam_share   = if_else(total_adm > 0, family_based_admissions     / total_adm, NA_real_),
     emp_share   = if_else(total_adm > 0, employment_based_admissions / total_adm, NA_real_),
     hum_share   = if_else(total_adm > 0, humanitarian_admissions     / total_adm, NA_real_),
@@ -261,35 +271,30 @@ saveRDS(panel, "data_clean/panel.rds")
 panel_total <- panel |> filter(!is.na(irca_intensity), !is.na(post))
 panel_net   <- panel_total |> filter(!is.na(adj_share))
 
+# ---- Full-denominator dataset (MUST exist before use) ----
+panel_fd <- panel |>
+  mutate(
+    occ_total = occ_known + no_occupation,
+    blue_fullden = if_else(is.finite(occ_total) & occ_total > 0,
+                           blue_collar_non_farm / occ_total,
+                           NA_real_)
+  )
+
 ############################################################
 ####  DECOMPOSITION: levels behind the share result
-#### Outcomes:
-####  - blue_level        = blue_collar_non_farm
-####  - occ_known_level   = occ_known
-####  - occ_total_level   = occ_known + no_occupation
-####  - noocc_level       = no_occupation
-#### Plus log(1+x) variants for scale robustness
 ############################################################
-
-# Use Net sample (consistent with your main spec that includes adj_share)
-
 decomp_df <- panel_net |>
-  dplyr::mutate(
+  mutate(
     blue_level      = as.numeric(blue_collar_non_farm),
     occ_known_level = as.numeric(occ_known),
     noocc_level     = as.numeric(no_occupation),
     occ_total_level = as.numeric(occ_known + no_occupation),
-    
-    # log(1+x) versions to reduce scale issues; keep zeros safe
     ln_blue_level      = log1p(pmax(blue_level, 0)),
     ln_occ_known_level = log1p(pmax(occ_known_level, 0)),
     ln_noocc_level     = log1p(pmax(noocc_level, 0)),
     ln_occ_total_level = log1p(pmax(occ_total_level, 0))
   ) |>
-  
-  # Remove rows with missing key outcomes (just in case)
-  
-  dplyr::filter(
+  filter(
     is.finite(blue_level),
     is.finite(occ_known_level),
     is.finite(noocc_level),
@@ -297,29 +302,23 @@ decomp_df <- panel_net |>
   )
 
 run_decomp <- function(df, y){
-  fixest::feols(
+  feols(
     as.formula(paste0(y, " ~ irca_intensity*post + adj_share | country + year")),
     data = df, cluster = ~ country
   )
 }
-
-# Level models
 
 m_blue_lvl      <- run_decomp(decomp_df, "blue_level")
 m_occ_known_lvl <- run_decomp(decomp_df, "occ_known_level")
 m_occ_total_lvl <- run_decomp(decomp_df, "occ_total_level")
 m_noocc_lvl     <- run_decomp(decomp_df, "noocc_level")
 
-# Log(1+x) models (often easier to interpret as approx % changes)
-
 m_ln_blue      <- run_decomp(decomp_df, "ln_blue_level")
 m_ln_occ_known <- run_decomp(decomp_df, "ln_occ_known_level")
 m_ln_occ_total <- run_decomp(decomp_df, "ln_occ_total_level")
 m_ln_noocc     <- run_decomp(decomp_df, "ln_noocc_level")
 
-# Export table (levels + logs)
-
-modelsummary::modelsummary(
+modelsummary(
   list(
     "Blue level"        = m_blue_lvl,
     "Occ known level"   = m_occ_known_lvl,
@@ -333,7 +332,7 @@ modelsummary::modelsummary(
   output   = "outputs/tables/tab_decomp_levels_A.tex"
 )
 
-modelsummary::modelsummary(
+modelsummary(
   list(
     "ln(1+Blue)"        = m_ln_blue,
     "ln(1+Occ known)"   = m_ln_occ_known,
@@ -347,8 +346,6 @@ modelsummary::modelsummary(
   output   = "outputs/tables/tab_decomp_levels_B.tex"
 )
 
-# Coefficient plot for IRCA × Post across the 8 outcomes
-
 extract_irca_post <- function(mod, outcome_label){
   tt <- broom::tidy(mod)
   rr <- tt[tt$term == "irca_intensity:post", ]
@@ -356,7 +353,7 @@ extract_irca_post <- function(mod, outcome_label){
   rr
 }
 
-coef_df <- dplyr::bind_rows(
+coef_df <- bind_rows(
   extract_irca_post(m_blue_lvl,      "Blue level"),
   extract_irca_post(m_occ_known_lvl, "Occ known level"),
   extract_irca_post(m_occ_total_lvl, "Occ total level"),
@@ -366,95 +363,64 @@ coef_df <- dplyr::bind_rows(
   extract_irca_post(m_ln_occ_total,  "ln(1+Occ total)"),
   extract_irca_post(m_ln_noocc,      "ln(1+No-occ)")
 ) |>
-  dplyr::mutate(
+  mutate(
     est = estimate,
     lo  = estimate - 1.96*std.error,
     hi  = estimate + 1.96*std.error
   )
 
-# --- Split coef plot into LEVELS only vs LOGS only  ---
-
-# Keep a stable ordering
-
 lvl_order <- c("Blue level","Occ known level","Occ total level","No-occ level")
 log_order <- c("ln(1+Blue)","ln(1+Occ known)","ln(1+Occ total)","ln(1+No-occ)")
 
 coef_df <- coef_df |>
-  dplyr::mutate(
-    grp = dplyr::case_when(
+  mutate(
+    grp = case_when(
       outcome %in% lvl_order ~ "Levels",
       outcome %in% log_order ~ "Logs",
       TRUE ~ "Other"
     )
   )
 
-# 1) Levels plot
-
-coef_lvl <- coef_df |>
-  dplyr::filter(grp == "Levels") |>
-  dplyr::mutate(outcome = factor(outcome, levels = lvl_order))
-
-p_decomp_levels <- ggplot2::ggplot(coef_lvl, ggplot2::aes(x = outcome, y = est)) +
-  ggplot2::geom_hline(yintercept = 0, linetype = "dashed") +
-  ggplot2::geom_pointrange(ggplot2::aes(ymin = lo, ymax = hi)) +
-  ggplot2::coord_flip() +
-  ggplot2::labs(
-    x = NULL,
-    y = "Estimated effect of IRCA × Post (levels)",
-    title = "Decomposition (levels): IRCA × Post effects on numerator/denominators"
-  ) +
-  ggplot2::theme_bw()
-
+coef_lvl <- coef_df |> filter(grp == "Levels") |> mutate(outcome = factor(outcome, levels = lvl_order))
+p_decomp_levels <- ggplot(coef_lvl, aes(x = outcome, y = est)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_pointrange(aes(ymin = lo, ymax = hi)) +
+  coord_flip() +
+  labs(x = NULL, y = "Estimated effect of IRCA × Post (levels)",
+       title = "Decomposition (levels): IRCA × Post effects on numerator/denominators") +
+  theme_bw()
 save_plot(p_decomp_levels, "outputs/figures/fig_decomp_levels_only.png", w = 8, h = 4.8)
 
-# 2) Logs plot
-
-coef_log <- coef_df |>
-  dplyr::filter(grp == "Logs") |>
-  dplyr::mutate(outcome = factor(outcome, levels = log_order))
-
-p_decomp_logs <- ggplot2::ggplot(coef_log, ggplot2::aes(x = outcome, y = est)) +
-  ggplot2::geom_hline(yintercept = 0, linetype = "dashed") +
-  ggplot2::geom_pointrange(ggplot2::aes(ymin = lo, ymax = hi)) +
-  ggplot2::coord_flip() +
-  ggplot2::labs(
-    x = NULL,
-    y = "Estimated effect of IRCA × Post (log(1+x))",
-    title = "Decomposition (logs): IRCA × Post effects on numerator/denominators"
-  ) +
-  ggplot2::theme_bw()
-
+coef_log <- coef_df |> filter(grp == "Logs") |> mutate(outcome = factor(outcome, levels = log_order))
+p_decomp_logs <- ggplot(coef_log, aes(x = outcome, y = est)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_pointrange(aes(ymin = lo, ymax = hi)) +
+  coord_flip() +
+  labs(x = NULL, y = "Estimated effect of IRCA × Post (log(1+x))",
+       title = "Decomposition (logs): IRCA × Post effects on numerator/denominators") +
+  theme_bw()
 save_plot(p_decomp_logs, "outputs/figures/fig_decomp_logs_only.png", w = 8, h = 4.8)
 
 #### DATA QA — Missingness + coverage ####
-
 vars_for_heat <- c(
   "blue_share","ag_share","manual_share","serv_share","white_share","noocc_share",
   "fam_share","emp_share","hum_share","other_share",
   "male_share","adj_share"
 )
 
-# ---- Heatmap (country-year x variable) ----
-
 miss_heat <- panel %>%
-  dplyr::select(country, year, dplyr::any_of(vars_for_heat)) %>%
-  tidyr::pivot_longer(-c(country, year), names_to="var", values_to="val") %>%
-  dplyr::mutate(missing = as.integer(is.na(val)))
+  select(country, year, any_of(vars_for_heat)) %>%
+  pivot_longer(-c(country, year), names_to="var", values_to="val") %>%
+  mutate(missing = as.integer(is.na(val)))
 
-p_miss <- ggplot2::ggplot(miss_heat, ggplot2::aes(x=year, y=country, fill=missing)) +
-  ggplot2::geom_tile() +
-  ggplot2::scale_fill_gradient(limits=c(0,1), breaks=c(0,1),
-                               labels=c("Observed","Missing")) +
-  ggplot2::facet_wrap(~ var, ncol=3) +
-  ggplot2::labs(x=NULL, y=NULL, fill=NULL,
-                title="Missingness heatmap by country–year and variable") +
-  ggplot2::theme_bw() +
-  ggplot2::theme(panel.grid = ggplot2::element_blank(),
-                 legend.position="bottom")
-
+p_miss <- ggplot(miss_heat, aes(x=year, y=country, fill=missing)) +
+  geom_tile() +
+  scale_fill_gradient(limits=c(0,1), breaks=c(0,1), labels=c("Observed","Missing")) +
+  facet_wrap(~ var, ncol=3) +
+  labs(x=NULL, y=NULL, fill=NULL, title="Missingness heatmap by country–year and variable") +
+  theme_bw() +
+  theme(panel.grid = element_blank(), legend.position="bottom")
 save_plot(p_miss, "outputs/figures/fig_missing_heatmap.png", w=10, h=8)
-
-# ---- Missingness overall table ----
 
 lab <- c(
   blue_share="Blue share", ag_share="Agriculture share", manual_share="Manual share",
@@ -464,28 +430,28 @@ lab <- c(
 )
 
 miss_tab <- panel %>%
-  dplyr::summarise(
-    dplyr::across(dplyr::any_of(vars_for_heat), ~ sum(is.na(.x)),  .names = "n_miss_{col}"),
-    dplyr::across(dplyr::any_of(vars_for_heat), ~ sum(!is.na(.x)), .names = "n_obs_{col}")
+  summarise(
+    across(any_of(vars_for_heat), ~ sum(is.na(.x)),  .names = "n_miss_{col}"),
+    across(any_of(vars_for_heat), ~ sum(!is.na(.x)), .names = "n_obs_{col}")
   ) %>%
-  tidyr::pivot_longer(
-    dplyr::everything(),
+  pivot_longer(
+    everything(),
     names_to      = c(".value","var"),
     names_pattern = "n_(miss|obs)_(.*)"
   ) %>%
-  dplyr::rename(n_miss = miss, n_obs = obs) %>%
-  dplyr::mutate(
+  rename(n_miss = miss, n_obs = obs) %>%
+  mutate(
     n_total    = n_obs + n_miss,
     share_miss = n_miss / n_total,
-    variable   = dplyr::recode(.data[["var"]], !!!lab)
+    variable   = recode(.data[["var"]], !!!lab)
   ) %>%
-  dplyr::select(variable, n_obs, n_miss, n_total, share_miss) %>%
-  dplyr::arrange(dplyr::desc(share_miss))
+  select(variable, n_obs, n_miss, n_total, share_miss) %>%
+  arrange(desc(share_miss))
 
 miss_tab_tex <- knitr::kable(
   miss_tab %>%
-    dplyr::mutate(`Share missing (%)` = 100*share_miss) %>%
-    dplyr::transmute(
+    mutate(`Share missing (%)` = 100*share_miss) %>%
+    transmute(
       Variable = variable,
       `Obs.` = n_obs, Missing = n_miss, Total = n_total,
       `Share missing (%)` = sprintf("%.1f", `Share missing (%)`)
@@ -493,106 +459,90 @@ miss_tab_tex <- knitr::kable(
   format="latex", booktabs=TRUE,
   caption="Missingness by variable at the country–year level."
 )
-
 writeLines(miss_tab_tex, "outputs/tables/tab_missing_overall.tex")
 
-# ---- Missingness by year table ----
-
 miss_by_year <- panel %>%
-  dplyr::group_by(year) %>%
-  dplyr::summarise(dplyr::across(dplyr::any_of(vars_for_heat), ~ mean(is.na(.x)), .names="{col}"),
-                   .groups="drop") %>%
-  tidyr::pivot_longer(-year, names_to="var", values_to="share_missing") %>%
-  dplyr::mutate(variable = dplyr::recode(.data[["var"]], !!!lab)) %>%
-  dplyr::select(year, variable, share_missing) %>%
-  tidyr::pivot_wider(names_from = variable, values_from = share_missing) %>%
-  dplyr::arrange(year)
+  group_by(year) %>%
+  summarise(across(any_of(vars_for_heat), ~ mean(is.na(.x)), .names="{col}"),
+            .groups="drop") %>%
+  pivot_longer(-year, names_to="var", values_to="share_missing") %>%
+  mutate(variable = recode(.data[["var"]], !!!lab)) %>%
+  select(year, variable, share_missing) %>%
+  pivot_wider(names_from = variable, values_from = share_missing) %>%
+  arrange(year)
 
 miss_by_year_tex <- knitr::kable(
-  miss_by_year %>% dplyr::mutate(dplyr::across(-year, ~ sprintf("%.0f\\%%", 100*.x))),
+  miss_by_year %>% mutate(across(-year, ~ sprintf("%.0f\\%%", 100*.x))),
   format="latex", booktabs=TRUE,
   caption="Share missing by variable and year (percent)."
 )
-
 writeLines(miss_by_year_tex, "outputs/tables/tab_missing_byyear.tex")
 
-# ---- Coverage by country (key vars) ----
-
 key_vars <- c("blue_share","adj_share","irca_intensity","post")
-
 cov_cty <- panel %>%
-  dplyr::group_by(country) %>%
-  dplyr::summarise(
-    years_total = dplyr::n_distinct(year),
-    years_covered = dplyr::n_distinct(year[ dplyr::if_all(dplyr::any_of(key_vars), ~ !is.na(.x)) ]),
+  group_by(country) %>%
+  summarise(
+    years_total = n_distinct(year),
+    years_covered = n_distinct(year[ if_all(any_of(key_vars), ~ !is.na(.x)) ]),
     coverage_ratio = years_covered / years_total,
     .groups="drop"
   ) %>%
-  dplyr::arrange(dplyr::desc(coverage_ratio))
+  arrange(desc(coverage_ratio))
 
 cov_cty_tex <- knitr::kable(
   cov_cty %>%
-    dplyr::mutate(`Coverage ratio` = sprintf("%.3f", coverage_ratio)) %>%
-    dplyr::select(Country = country,
-                  `Years total` = years_total,
-                  `Years covered (key vars)` = years_covered,
-                  `Coverage ratio`),
+    mutate(`Coverage ratio` = sprintf("%.3f", coverage_ratio)) %>%
+    select(Country = country,
+           `Years total` = years_total,
+           `Years covered (key vars)` = years_covered,
+           `Coverage ratio`),
   format="latex", booktabs=TRUE,
   caption="Country coverage by years and key variables."
 )
-
 writeLines(cov_cty_tex, "outputs/tables/tab_coverage_country.tex")
 
 #### EDA — Exposure distribution + exposure vs change in blue ####
-
-# Exposure histogram (country-level)
-
 expo_country <- panel %>%
-  dplyr::distinct(country, irca_intensity) %>%
-  dplyr::filter(is.finite(irca_intensity))
+  distinct(country, irca_intensity) %>%
+  filter(is.finite(irca_intensity))
 
-p_hist <- ggplot2::ggplot(expo_country, ggplot2::aes(x=irca_intensity)) +
-  ggplot2::geom_histogram(bins=12) +
-  ggplot2::labs(x="IRCA exposure (country-level)", y="Count",
-                title="Distribution of IRCA exposure across origin countries") +
-  ggplot2::theme_bw()
-
+p_hist <- ggplot(expo_country, aes(x=irca_intensity)) +
+  geom_histogram(bins=12) +
+  labs(x="IRCA exposure (country-level)", y="Count",
+       title="Distribution of IRCA exposure across origin countries") +
+  theme_bw()
 save_plot(p_hist, "outputs/figures/fig_exposure_hist.png", w=6.5, h=4.2)
 
-# Scatter: exposure vs Δ blue_share (89–92 minus 82–85)
-
 chg_cty <- panel %>%
-  dplyr::filter(!is.na(blue_share)) %>%
-  dplyr::mutate(period = dplyr::case_when(
+  filter(!is.na(blue_share)) %>%
+  mutate(period = case_when(
     year %in% 1982:1985 ~ "pre",
     year %in% 1989:1992 ~ "irca",
     TRUE ~ NA_character_
   )) %>%
-  dplyr::filter(!is.na(period)) %>%
-  dplyr::group_by(country, period) %>%
-  dplyr::summarise(blue = mean(blue_share, na.rm=TRUE), .groups="drop") %>%
-  tidyr::pivot_wider(names_from=period, values_from=blue) %>%
-  dplyr::left_join(panel %>% dplyr::distinct(country, irca_intensity), by="country") %>%
-  dplyr::mutate(d_blue = irca - pre)
+  filter(!is.na(period)) %>%
+  group_by(country, period) %>%
+  summarise(blue = mean(blue_share, na.rm=TRUE), .groups="drop") %>%
+  pivot_wider(names_from=period, values_from=blue) %>%
+  left_join(panel %>% distinct(country, irca_intensity), by="country") %>%
+  mutate(d_blue = irca - pre)
 
-p_sc <- ggplot2::ggplot(chg_cty, ggplot2::aes(x=irca_intensity, y=d_blue, label=country)) +
-  ggplot2::geom_hline(yintercept=0, linetype="dashed") +
-  ggplot2::geom_point() +
+p_sc <- ggplot(chg_cty, aes(x=irca_intensity, y=d_blue, label=country)) +
+  geom_hline(yintercept=0, linetype="dashed") +
+  geom_point() +
   ggrepel::geom_text_repel(size=3, max.overlaps=20) +
-  ggplot2::geom_smooth(method="lm", se=FALSE) +
-  ggplot2::scale_y_continuous(labels=scales::percent) +
-  ggplot2::labs(x="IRCA exposure", y="Δ blue share (89–92 minus 82–85)",
-                title="Exposure vs change in blue-collar share (pre vs IRCA surge)") +
-  ggplot2::theme_bw()
-
+  geom_smooth(method="lm", se=FALSE) +
+  scale_y_continuous(labels=scales::percent) +
+  labs(x="IRCA exposure", y="Δ blue share (89–92 minus 82–85)",
+       title="Exposure vs change in blue-collar share (pre vs IRCA surge)") +
+  theme_bw()
 save_plot(p_sc, "outputs/figures/fig_scatter_exposure_dblue_all.png", w=7, h=4.6)
 
-panel_nomx  <- panel |> filter(country != "Mexico")
+panel_nomx       <- panel |> filter(country != "Mexico")
 panel_nomx_total <- panel_total |> filter(country != "Mexico")
-panel_nomx_net   <- panel_net   |> filter(country != "Mexico")
+panel_nomx_net   <- panel_net |> filter(country != "Mexico")
 
 #### 5A) Baseline correlation check (diagnostic) ####
-
 baseline_check <- panel |>
   filter(year %in% 1982:1985) |>
   group_by(country) |>
@@ -604,7 +554,6 @@ baseline_check <- panel |>
   filter(is.finite(pre_blue), is.finite(irca_intensity))
 
 baseline_lm <- lm(pre_blue ~ irca_intensity, data = baseline_check)
-
 modelsummary(
   baseline_lm,
   fmt = 3,
@@ -617,8 +566,65 @@ cat("Baseline correlation: mean blue_share (1982–1985) ~ IRCA intensity\n\n")
 print(summary(baseline_lm))
 sink()
 
-#### 6) Helper runners ####
+#### PORTFOLIO DASHBOARD FIGURE (1 page) ####
+dash_df <- panel |>
+  filter(year %in% 1982:2000) |>
+  mutate(
+    occ_total = occ_known + no_occupation,
+    blue_fullden = if_else(is.finite(occ_total) & occ_total > 0,
+                           blue_collar_non_farm / occ_total,
+                           NA_real_)
+  ) |>
+  group_by(irca_group, year) |>
+  summarise(
+    blue_net   = mean(blue_share, na.rm = TRUE),
+    blue_full  = mean(blue_fullden, na.rm = TRUE),
+    noocc      = mean(noocc_share, na.rm = TRUE),
+    blue_lvl   = mean(as.numeric(blue_collar_non_farm), na.rm = TRUE),
+    occ_total  = mean(as.numeric(occ_total), na.rm = TRUE),
+    .groups = "drop"
+  )
 
+p1 <- ggplot(dash_df, aes(x=year, y=blue_net, color=irca_group)) +
+  geom_line() + geom_point(size=1.3) +
+  scale_y_continuous(labels=scales::percent_format(accuracy=1)) +
+  labs(x=NULL, y="Blue share (net denom)", color="Exposure group",
+       title="A) Blue-collar share (net denominator)") +
+  theme_bw() + theme(legend.position="bottom")
+
+p2 <- ggplot(dash_df, aes(x=year, y=noocc, color=irca_group)) +
+  geom_line() + geom_point(size=1.3) +
+  scale_y_continuous(labels=scales::percent_format(accuracy=1)) +
+  labs(x=NULL, y="No-occupation share", color="Exposure group",
+       title="B) No-occupation share (reporting/denominator channel)") +
+  theme_bw() + theme(legend.position="bottom")
+
+p3 <- ggplot(dash_df, aes(x=year, y=blue_lvl, color=irca_group)) +
+  geom_line() + geom_point(size=1.1) +
+  labs(x=NULL, y="Mean count", color="Exposure group",
+       title="C) Blue-collar counts (levels)") +
+  theme_bw() + theme(legend.position="bottom")
+
+p4 <- ggplot(dash_df, aes(x=year, y=occ_total, color=irca_group)) +
+  geom_line() + geom_point(size=1.1) +
+  labs(x="Year", y="Mean count", color="Exposure group",
+       title="D) Total occupations (known + no-occ)") +
+  theme_bw() + theme(legend.position="bottom")
+
+# Combine via patchwork (optional; if missing, save separate)
+if (!requireNamespace("patchwork", quietly = TRUE)) {
+  warning("Package 'patchwork' not installed. Saving dashboard panels separately.")
+  save_plot(p1, "outputs/figures/fig_PORTFOLIO_dash_A.png", w=7, h=4.6)
+  save_plot(p2, "outputs/figures/fig_PORTFOLIO_dash_B.png", w=7, h=4.6)
+  save_plot(p3, "outputs/figures/fig_PORTFOLIO_dash_C.png", w=7, h=4.6)
+  save_plot(p4, "outputs/figures/fig_PORTFOLIO_dash_D.png", w=7, h=4.6)
+} else {
+  library(patchwork)
+  p_dash <- (p1 + p2) / (p3 + p4) + patchwork::plot_layout(guides = "collect")
+  save_plot(p_dash, "outputs/figures/fig_PORTFOLIO_dashboard.png", w=10.5, h=8.0)
+}
+
+#### 6) Helper runners ####
 build_samples <- function(df, y) {
   dat_total <- df |> filter(!is.na(.data[[y]]), !is.na(irca_intensity), !is.na(post))
   dat_net   <- dat_total |> filter(!is.na(adj_share))
@@ -636,7 +642,6 @@ run_main_by_y <- function(df, y) {
 }
 
 #### 7) MAIN MODELS — Occupation shares ####
-
 m_full_blue   <- run_main_by_y(panel, "blue_share")
 m_full_ag     <- run_main_by_y(panel, "ag_share")
 m_full_manual <- run_main_by_y(panel, "manual_share")
@@ -652,7 +657,6 @@ m_nomx_white  <- run_main_by_y(panel_nomx, "white_share")
 m_nomx_noocc  <- run_main_by_y(panel_nomx, "noocc_share")
 
 #### 7A) MAIN MODELS — Class shares ####
-
 m_fam   <- run_main_by_y(panel, "fam_share")
 m_emp   <- run_main_by_y(panel, "emp_share")
 m_hum   <- run_main_by_y(panel, "hum_share")
@@ -674,11 +678,11 @@ meanY_on_sample <- function(df, y, need_adj){
 }
 
 addrow_means_total <- tibble::tibble(
-  term = "Mean of Y",
+  term = "Mean of Y (share units)",
   !!!setNames(lapply(outcomes_all, \(y) meanY_on_sample(panel, y, need_adj = FALSE)), outcomes_all)
 )
 addrow_means_net <- tibble::tibble(
-  term = "Mean of Y",
+  term = "Mean of Y (share units)",
   !!!setNames(lapply(outcomes_all, \(y) meanY_on_sample(panel, y, need_adj = TRUE)), outcomes_all)
 )
 
@@ -710,7 +714,6 @@ panelB_vars <- c("noocc_share","fam_share","emp_share","hum_share","other_share"
 
 addrow_means_total_A <- addrow_means_total[, c("term", panelA_vars)]
 addrow_means_total_B <- addrow_means_total[, c("term", panelB_vars)]
-
 addrow_means_net_A   <- addrow_means_net[,   c("term", panelA_vars)]
 addrow_means_net_B   <- addrow_means_net[,   c("term", panelB_vars)]
 
@@ -787,7 +790,6 @@ modelsummary(
 )
 
 #### 7B) Country-specific linear trends robustness (Blue) ####
-
 m_blue_trends_total <- feols(
   blue_share ~ irca_intensity*post | country + year + country[t],
   data = panel_total |> filter(!is.na(blue_share)),
@@ -806,8 +808,7 @@ modelsummary(
     "Trends Total"   = m_blue_trends_total,
     "Trends Net"     = m_blue_trends_net
   ),
-  coef_map = c("irca_intensity:post"="IRCA intensity × Post",
-               "adj_share"="Adjustment share"),
+  coef_map = c("irca_intensity:post"="IRCA intensity × Post", "adj_share"="Adjustment share"),
   gof_map  = c("nobs","r.squared.within"),
   fmt = 3,
   stars = c('*'=.10,'**'=.05,'***'=.01),
@@ -816,42 +817,32 @@ modelsummary(
 )
 
 #### 8) Event study (blue_share, Total) ####
-
 panel_es <- panel |> filter(!is.na(blue_share), !is.na(irca_intensity))
 es_blue_total <- feols(
   blue_share ~ i(year, irca_intensity, ref = 1988) | country + year,
   data = panel_es, cluster = ~ country
 )
 
-# ---- Wald joint test: pre-period event-study coefficients = 0 ----
-# Get the coefficient names and pick the pre-1988 "year::YYYY:irca_intensity" terms
+# robust Wald pretrend selection: parse all year::YYYY terms, keep < 1988
 cn <- names(coef(es_blue_total))
-
-pre_terms <- cn[grepl("^year::(198[2-7]|1988).*:irca_intensity$|^year::(198[2-7]).*:irca_intensity$", cn)]
-# NOTE: 1988 is the ref year, so it usually won't appear. We include the regex defensively.
-
-# Safer: explicitly parse years from term names
+year_terms <- cn[grepl("^year::\\d{4}.*:irca_intensity", cn)]
 get_year <- function(x) as.numeric(sub("^year::(\\d{4}).*$", "\\1", x))
-yr <- suppressWarnings(get_year(pre_terms))
-pre_terms <- pre_terms[!is.na(yr) & yr < 1988]
+yrs <- suppressWarnings(get_year(year_terms))
+pre_terms <- year_terms[is.finite(yrs) & yrs < 1988]
 
-# Run Wald test if we found any terms
 if (length(pre_terms) > 0) {
   w_pre <- fixest::wald(es_blue_total, pre_terms)
   
-  # Save a simple text log
   sink("outputs/logs/wald_pretrends_es_blue_total.txt")
   cat("Wald joint pre-trends (years < 1988)\n")
   cat("H0: All pre-1988 exposure×year coefficients = 0\n\n")
   cat("stat:", w_pre$stat, "\n")
   cat("df1:",  w_pre$df1, "\n")
   cat("df2:",  w_pre$df2, "\n")
-  cat("p:",    w_pre$p, "\n")
-  cat("vcov:", w_pre$vcov, "\n")
-  cat("Terms tested:\n"); cat(paste(pre_terms, collapse="\n")); cat("\n\n")
+  cat("p:",    w_pre$p, "\n\n")
+  cat("Terms tested:\n"); cat(paste(pre_terms, collapse="\n")); cat("\n")
   sink()
   
-  # Also save a tiny LaTeX table
   w_tab <- tibble::tibble(
     Test      = "Wald joint pre-trends (years < 1988)",
     Statistic = unname(w_pre$stat),
@@ -861,7 +852,7 @@ if (length(pre_terms) > 0) {
   )
   
   w_tab_tex <- knitr::kable(
-    w_tab %>% dplyr::mutate(across(where(is.numeric), ~ signif(.x, 4))),
+    w_tab %>% mutate(across(where(is.numeric), ~ signif(.x, 4))),
     format = "latex", booktabs = TRUE,
     caption = "Wald joint test of pre-trend coefficients in the event-study specification."
   )
@@ -869,7 +860,6 @@ if (length(pre_terms) > 0) {
 } else {
   warning("No pre-trend terms found for Wald test (check term naming).")
 }
-
 
 es_coefs <- broom::tidy(es_blue_total) |>
   filter(grepl("^year::", term)) |>
@@ -887,15 +877,12 @@ p_es <- ggplot(es_coefs, aes(x = rel_year, y = estimate)) +
        y = "Effect of IRCA exposure on blue-collar share (0–1)",
        title = "") +
   theme_bw()
-
 save_plot(p_es, "outputs/figures/fig_es_blue_total.png", w=7, h=4.6)
 
-# Formal pretrend regression (<=1988)
 pre_panel <- panel |> filter(year <= 1988, !is.na(blue_share), !is.na(irca_intensity))
 m_pretrend <- feols(
   blue_share ~ irca_intensity*t | country,
-  data = pre_panel,
-  cluster = ~ country
+  data = pre_panel, cluster = ~ country
 )
 modelsummary(
   m_pretrend,
@@ -945,7 +932,6 @@ p_early_late <- ggplot(tidy2, aes(x = label, y = est_pp, shape = spec)) +
        title = "IRCA exposure × period on blue-collar share") +
   theme_bw(base_size = 11) +
   theme(legend.title = element_blank())
-
 save_plot(p_early_late, "outputs/figures/fig_early_late_blue.png", w=7, h=4.6)
 
 #### 10) Descriptive: pre-trend group means (1982–1988) ####
@@ -960,7 +946,6 @@ p_pre <- ggplot(blue_pre, aes(x=year, y=mean_blue, color=irca_group)) +
   labs(x="Year", y="Mean blue-collar share", color="IRCA exposure",
        title="Pre-IRCA trends: blue-collar share, 1982–1988") +
   theme_bw()
-
 save_plot(p_pre, "outputs/figures/fig_pretrend_groups.png", w=7, h=4.6)
 
 #### 11) Placebos (pre-period only) ####
@@ -973,7 +958,6 @@ placebos <- list(
                               data = panel_pre, cluster = ~ country)
 )
 
-# Map exact term names
 nm86 <- names(coef(placebos[[1]]))
 nm86_term <- nm86[grepl("irca_intensity.*I\\(year >= 1986\\)|I\\(year >= 1986\\).*irca_intensity", nm86)]
 nm87 <- names(coef(placebos[[2]]))
@@ -993,7 +977,7 @@ modelsummary(
   output   = "outputs/tables/tab_placebos.tex"
 )
 
-#### 12) Alternative intensity (Blue, Net) + standardized effects ####
+#### 12) Alternative intensity (Blue, Net) + Portfolio main comparison ####
 class_early <- class |>
   group_by(country) |>
   summarise(
@@ -1006,69 +990,126 @@ class_early <- class |>
 panel_alt <- panel |>
   left_join(class_early |> select(country, irca_intensity_alt), by = "country")
 
-panel_alt_net <- panel_alt |> filter(!is.na(blue_share), !is.na(irca_intensity_alt), !is.na(post), !is.na(adj_share))
+panel_alt_net      <- panel_alt |> filter(!is.na(blue_share), !is.na(irca_intensity_alt), !is.na(post), !is.na(adj_share))
 panel_alt_nomx_net <- panel_alt_net |> filter(country != "Mexico")
 
-fe_blue_net <- feols(blue_share ~ irca_intensity*post + adj_share | country + year,
-                     data = panel_net, cluster = ~ country)
+dat_blue_net <- panel_net |>
+  dplyr::filter(!is.na(blue_share), !is.na(irca_intensity), !is.na(post), !is.na(adj_share))
 
+fe_blue_net <- feols(
+  blue_share ~ irca_intensity*post + adj_share | country + year,
+  data = dat_blue_net,
+  cluster = ~ country
+)
 
+# ---- PORTFOLIO MAIN RESULT: Net vs Full denominator on SAME sample ----
+cmp <- panel_fd |>
+  filter(!is.na(irca_intensity), !is.na(post), !is.na(adj_share),
+         !is.na(blue_share), !is.na(blue_fullden))
+
+fe_blue_net_cmp <- feols(
+  blue_share ~ irca_intensity*post + adj_share | country + year,
+  data = cmp, cluster = ~ country
+)
+fe_blue_fullden_cmp <- feols(
+  blue_fullden ~ irca_intensity*post + adj_share | country + year,
+  data = cmp, cluster = ~ country
+)
+
+modelsummary::modelsummary(
+  list(
+    "Blue share (Net denom; same sample)"  = fe_blue_net_cmp,
+    "Blue share (Full denom; same sample)" = fe_blue_fullden_cmp
+  ),
+  coef_map = c("irca_intensity:post"="IRCA intensity × Post", "adj_share"="Adjustment share"),
+  gof_map  = c("nobs","r.squared.within"),
+  fmt = 3,
+  stars = c('*'=.10,'**'=.05,'***'=.01),
+  notes = paste(
+    "Country & Year FE; SE clustered by origin-country.",
+    "Same-sample comparison: rows require both blue_share and blue_fullden observed.",
+    "Portfolio takeaway: denominator sensitivity suggests reporting/missingness mechanics are central."
+  ),
+  output = "outputs/tables/tab_MAIN_net_vs_full_denom.tex"
+)
+
+beta_net  <- unname(coef(fe_blue_net_cmp)["irca_intensity:post"])
+beta_full <- unname(coef(fe_blue_fullden_cmp)["irca_intensity:post"])
+
+writeLines(
+  c(
+    "Main contrast (same sample): IRCA×Post coefficient",
+    paste0("Net denom  (blue_share):   ", signif(beta_net, 4)),
+    paste0("Full denom (blue_fullden): ", signif(beta_full, 4))
+  ),
+  "outputs/logs/main_contrast_net_vs_full.txt"
+)
+
+# Magnitudes (Net and Full denom; consistent yvar)
+write_magnitudes(
+  df = cmp,
+  model = fe_blue_net_cmp,
+  yvar = "blue_share",
+  out_table = "outputs/tables/tab_magnitudes_blue_NET.tex",
+  out_plot  = "outputs/figures/fig_std_effects_blue_NET.png",
+  caption = "Magnitudes: Blue share (Net denominator; same sample)"
+)
+
+write_magnitudes(
+  df = cmp,
+  model = fe_blue_fullden_cmp,
+  yvar = "blue_fullden",
+  out_table = "outputs/tables/tab_magnitudes_blue_FULLDEN.tex",
+  out_plot  = "outputs/figures/fig_std_effects_blue_FULLDEN.png",
+  caption = "Magnitudes: Blue share (Full denominator; same sample)"
+)
+
+#### 12A) Extra robustness helpers ####
 run_blue_net <- function(df){
-  fixest::feols(
+  feols(
     blue_share ~ irca_intensity*post + adj_share | country + year,
     data = df, cluster = ~ country
   )
 }
 
 run_noocc_net <- function(df){
-  # noocc_share exists in panel; but it may be NA in some rows
-  df2 <- df |> dplyr::filter(!is.na(noocc_share))
-  fixest::feols(
+  df2 <- df |> filter(!is.na(noocc_share))
+  feols(
     noocc_share ~ irca_intensity*post + adj_share | country + year,
     data = df2, cluster = ~ country
   )
 }
 
-# ---- (1) Drop high-missing years 1995–1997 ----
+# Drop high-missing years 1995–1997
 drop_years <- 1995:1997
-panel_net_drop9597 <- panel_net |> dplyr::filter(!(year %in% drop_years))
+panel_net_drop9597 <- panel_net |> filter(!(year %in% drop_years))
 m_blue_net_drop9597 <- run_blue_net(panel_net_drop9597)
 
-# ---- (2) Drop incomplete-coverage countries (Uruguay, Paraguay) ----
-# (Based on your coverage table: these two have incomplete key-var coverage)
+# Drop incomplete-coverage countries
 drop_cty <- c("Uruguay","Paraguay")
-panel_net_drop_incomplete <- panel_net |> dplyr::filter(!(country %in% drop_cty))
+panel_net_drop_incomplete <- panel_net |> filter(!(country %in% drop_cty))
 m_blue_net_drop_incomplete <- run_blue_net(panel_net_drop_incomplete)
 
-# ---- (3) Shorter window 1982–1995 (often used for data quality) ----
-panel_net_8295 <- panel_net |> dplyr::filter(year %in% 1982:1995)
+# Shorter window 1982–1995
+panel_net_8295 <- panel_net |> filter(year %in% 1982:1995)
 m_blue_net_8295 <- run_blue_net(panel_net_8295)
 
-# ---- (4) Denominator diagnostic: no-occupation share trends + DiD ----
+# Denominator diagnostic: no-occupation trends + DiD
+noocc_trends <- panel |>
+  filter(!is.na(noocc_share), year %in% 1982:2000) |>
+  group_by(irca_group, year) |>
+  summarise(mean_noocc = mean(noocc_share, na.rm = TRUE), .groups = "drop")
 
-# 4A) Plot noocc_share by exposure group over time
-noocc_trends <- panel |> 
-  dplyr::filter(!is.na(noocc_share), year %in% 1982:2000) |>
-  dplyr::group_by(irca_group, year) |>
-  dplyr::summarise(mean_noocc = mean(noocc_share, na.rm = TRUE), .groups = "drop")
-
-p_noocc <- ggplot2::ggplot(noocc_trends, ggplot2::aes(x=year, y=mean_noocc, color=irca_group)) +
-  ggplot2::geom_line() +
-  ggplot2::geom_point(size=1.5) +
-  ggplot2::scale_y_continuous(labels=scales::percent_format(accuracy=1)) +
-  ggplot2::labs(
-    x="Year", y="Mean no-occupation share",
-    color="IRCA exposure",
-    title="No-occupation share over time by IRCA exposure group"
-  ) +
-  ggplot2::theme_bw()
-
+p_noocc <- ggplot(noocc_trends, aes(x=year, y=mean_noocc, color=irca_group)) +
+  geom_line() + geom_point(size=1.5) +
+  scale_y_continuous(labels=scales::percent_format(accuracy=1)) +
+  labs(x="Year", y="Mean no-occupation share", color="IRCA exposure",
+       title="No-occupation share over time by IRCA exposure group") +
+  theme_bw()
 save_plot(p_noocc, "outputs/figures/fig_noocc_trends_by_exposure.png", w=7, h=4.6)
 
-# 4B) DiD on noocc_share in the Net sample (controls adj_share)
 m_noocc_net <- run_noocc_net(panel_net)
 
-# ---- Export a single robustness table (baseline vs variants) ----
 modelsummary::modelsummary(
   list(
     "Baseline Net"          = fe_blue_net,
@@ -1083,7 +1124,6 @@ modelsummary::modelsummary(
   output   = "outputs/tables/tab_robust_extra_blue.tex"
 )
 
-# ---- Export no-occupation regression table ----
 modelsummary::modelsummary(
   list("No-occ share (Net sample)" = m_noocc_net),
   coef_map = c("irca_intensity:post"="IRCA × Post", "adj_share"="Adjustment share"),
@@ -1093,22 +1133,16 @@ modelsummary::modelsummary(
   output   = "outputs/tables/tab_noocc_did.tex"
 )
 
-#### 12B)  ADD-ONS — magnitudes, bins, mechanism scan, diagnostics ####
-
-# ---- (i) Economic magnitudes table + standardized bar chart ----
-
-write_magnitudes_blue(panel_net = panel_net, fe_blue_net = fe_blue_net)
-
-# ---- (ii) Heterogeneity by exposure quartile (bins) ----
+#### 12B) Heterogeneity by exposure quartile (bins) ####
 q_tbl <- panel |>
-  dplyr::distinct(country, irca_intensity) |>
-  dplyr::mutate(q = dplyr::ntile(irca_intensity, 4))
+  distinct(country, irca_intensity) |>
+  mutate(q = ntile(irca_intensity, 4))
 
 panel_q <- panel_net |>
-  dplyr::left_join(q_tbl, by="country") |>
-  dplyr::mutate(q = factor(q, levels=1:4, labels=paste0("Q",1:4)))
+  left_join(q_tbl, by="country") |>
+  mutate(q = factor(q, levels=1:4, labels=paste0("Q",1:4)))
 
-m_bins <- fixest::feols(
+m_bins <- feols(
   blue_share ~ i(q, post, ref="Q1") + adj_share | country + year,
   data = panel_q, cluster = ~ country
 )
@@ -1128,8 +1162,8 @@ modelsummary::modelsummary(
 )
 
 bin_coefs <- broom::tidy(m_bins) |>
-  dplyr::filter(grepl("q::Q[2-4]:post", term)) |>
-  dplyr::mutate(
+  filter(grepl("q::Q[2-4]:post", term)) |>
+  mutate(
     quartile = gsub("q::(Q[2-4]):post","\\1",term),
     pp = 100*estimate,
     lo = 100*(estimate - 1.96*std.error),
@@ -1144,17 +1178,16 @@ p_bins <- ggplot(bin_coefs, aes(x=quartile, y=pp)) +
   theme_bw()
 save_plot(p_bins, "outputs/figures/fig_bins_blue.png", w=6.5, h=4)
 
-# ---- (iii) Mechanism scan: IRCA×Post across multiple outcomes ----
+#### 12C) Mechanism scan ####
 outcomes_mech <- c("blue_share","serv_share","white_share",
                    "fam_share","emp_share",
                    "male_share","adj_share")
 
 run_mech <- function(y){
-  dat <- panel |>
-    dplyr::filter(!is.na(.data[[y]]), !is.na(irca_intensity), !is.na(post))
+  dat <- panel |> filter(!is.na(.data[[y]]), !is.na(irca_intensity), !is.na(post))
   rhs <- if (y == "adj_share") "irca_intensity*post" else "irca_intensity*post + adj_share"
-  fixest::feols(as.formula(paste0(y," ~ ", rhs, " | country + year")),
-                data = dat, cluster = ~ country)
+  feols(as.formula(paste0(y," ~ ", rhs, " | country + year")),
+        data = dat, cluster = ~ country)
 }
 
 mods_mech <- lapply(outcomes_mech, run_mech)
@@ -1177,23 +1210,23 @@ modelsummary::modelsummary(
   coef_map = c("irca_intensity:post"="IRCA × Post","adj_share"="Adjustment share"),
   gof_map = c("nobs","r.squared.within"),
   stars = c('*'=.10,'**'=.05,'***'=.01),
-  notes = "Country & Year FE; SE clustered by country. Panel B: secondary outcomes (smaller samples for some outcomes).",
+  notes = "Country & Year FE; SE clustered by country. Panel B: secondary outcomes.",
   output="outputs/tables/tab_mechanisms_summary_B.tex"
 )
 
-coef_df <- dplyr::bind_rows(lapply(names(mods_mech), function(nm){
+coef_df_mech <- bind_rows(lapply(names(mods_mech), function(nm){
   tt <- broom::tidy(mods_mech[[nm]])
   out <- tt[tt$term=="irca_intensity:post",]
   out$outcome <- nm
   out
 })) |>
-  dplyr::mutate(
+  mutate(
     pp = 100*estimate,
     lo = 100*(estimate - 1.96*std.error),
     hi = 100*(estimate + 1.96*std.error)
   )
 
-p_mech <- ggplot(coef_df, aes(x=reorder(outcome, pp), y=pp)) +
+p_mech <- ggplot(coef_df_mech, aes(x=reorder(outcome, pp), y=pp)) +
   geom_hline(yintercept=0, linetype="dashed") +
   geom_pointrange(aes(ymin=lo,ymax=hi)) +
   coord_flip() +
@@ -1202,34 +1235,24 @@ p_mech <- ggplot(coef_df, aes(x=reorder(outcome, pp), y=pp)) +
   theme_bw()
 save_plot(p_mech, "outputs/figures/fig_mechanisms_coefplot.png", w=7, h=4.8)
 
-# ---- (iv) Residual diagnostic (baseline Net) ----
+#### Residual diagnostic (baseline Net) ####
 dat_est <- panel_net |>
-  dplyr::filter(
-    !is.na(blue_share),
-    !is.na(irca_intensity),
-    !is.na(post),
-    !is.na(adj_share)
-  )
+  filter(!is.na(blue_share), !is.na(irca_intensity), !is.na(post), !is.na(adj_share))
+stopifnot(nrow(dat_est) == length(resid(fe_blue_net)))
 
-stopifnot(nrow(dat_est) == length(resid(fe_blue_net)))  
-
-res_df <- data.frame(
-  year  = dat_est$year,
-  resid = resid(fe_blue_net)
-) |>
-  dplyr::group_by(year) |>
-  dplyr::summarise(mean_resid = mean(resid, na.rm=TRUE), .groups="drop")
+res_df <- data.frame(year = dat_est$year, resid = resid(fe_blue_net)) |>
+  group_by(year) |>
+  summarise(mean_resid = mean(resid, na.rm=TRUE), .groups="drop")
 
 p_res <- ggplot(res_df, aes(x=year, y=mean_resid)) +
   geom_hline(yintercept=0, linetype="dashed") +
-  geom_line() +
-  geom_point() +
+  geom_line() + geom_point() +
   labs(x="Year", y="Mean residual",
        title="Residual sanity check: baseline Net (mean residual by year)") +
   theme_bw()
-
 save_plot(p_res, "outputs/figures/fig_residuals_by_year_blue.png", w=7, h=4)
 
+#### Alt intensity models ####
 fe_blue_alt <- feols(blue_share ~ irca_intensity_alt*post + adj_share | country + year,
                      data = panel_alt_net, cluster = ~ country)
 
@@ -1240,10 +1263,10 @@ fe_blue_alt_nx <- feols(blue_share ~ irca_intensity_alt*post + adj_share | count
 
 modelsummary(
   list(
-    "Blue Net (baseline)"  = fe_blue_net,
-    "Blue Net (alt denom)" = fe_blue_alt,
-    "Blue Net (–MX)"       = fe_blue_net_nx,
-    "Blue Net (alt –MX)"   = fe_blue_alt_nx
+    "Blue Net (baseline)"   = fe_blue_net,
+    "Blue Net (alt denom)"  = fe_blue_alt,
+    "Blue Net (–MX)"        = fe_blue_net_nx,
+    "Blue Net (alt –MX)"    = fe_blue_alt_nx
   ),
   coef_map = c(
     "irca_intensity:post"     = "IRCA intensity × Post",
@@ -1275,26 +1298,7 @@ modelsummary(
   output = "outputs/tables/tab_weights_blue.tex"
 )
 
-#### 14) Full denominator check (Blue) ####
-panel_fd <- panel |>
-  mutate(blue_fullden = blue_collar_non_farm / (occ_known + no_occupation))
-
-fe_blue_fullden <- feols(blue_fullden ~ irca_intensity*post + adj_share | country + year,
-                         data = panel_fd, cluster = ~ country)
-
-modelsummary(
-  list("Blue (Net denom)" = fe_blue_net,
-       "Blue (Full denom)" = fe_blue_fullden),
-  coef_map = c("irca_intensity:post" = "IRCA intensity × Post",
-               "adj_share"           = "Adjustment share"),
-  gof_map  = c("nobs","r.squared.within"),
-  fmt = 3,
-  stars = c('*'=.10,'**'=.05,'***'=.01),
-  notes    = "Country & Year FE; SE clustered by origin-country. Full denom divides by known+unknown occupations.",
-  output   = "outputs/tables/tab_full_denom_blue.tex"
-)
-
-#### 15) Balanced panel (Blue, Net)  ####
+#### 14) Balanced panel (Blue, Net)  ####
 years_full <- sort(unique(panel_net$year))
 
 balanced_countries <- panel_net |>
@@ -1319,7 +1323,7 @@ modelsummary(
   output="outputs/tables/tab_balanced_blue.tex"
 )
 
-#### 16) Leave-one-out (Blue Net) ####
+#### 15) Leave-one-out (Blue Net) ####
 ctrs <- sort(unique(panel_net$country))
 b_ref <- unname(coef(fe_blue_net)["irca_intensity:post"])
 
@@ -1338,15 +1342,10 @@ p_loo <- ggplot(loo_res, aes(x = reorder(drop, beta), y = beta)) +
   labs(x = "Country left out", y = expression(hat(beta)~"(IRCA intensity × Post)"),
        title = "Leave-one-out DiD coefficient: Blue-collar share (Net)") +
   theme_bw()
-
 save_plot(p_loo, "outputs/figures/fig_loo_blue_net.png", w=7, h=5)
 
-#### 17) Descriptive figures + missingness + admissions + demographics + portfolio add-ons ####
-
-
-#### 18) SPEC COMPARE  ####
+#### 16) SPEC COMPARE ####
 m_base <- fe_blue_net
-
 m_trends <- feols(
   blue_share ~ irca_intensity*post + adj_share | country + year + country[t],
   data = panel_net, cluster = ~ country
@@ -1364,7 +1363,62 @@ modelsummary::modelsummary(
   output = "outputs/tables/tab_spec_compare_blue.tex"
 )
 
-#### 19) Logs: run summary + sessionInfo ####
+#### 17) Small-cluster inference: wild cluster bootstrap (robust fallback) ####
+if (requireNamespace("fwildclusterboot", quietly = TRUE) &&
+    requireNamespace("dqrng", quietly = TRUE)) {
+  
+  set.seed(12345)
+  dqrng::dqset.seed(12345)
+  
+  # Use the EXACT same estimation sample as fe_blue_net
+  dat_wb <- dat_blue_net |>
+    dplyr::mutate(
+      country = factor(country),
+      year    = factor(year)
+    )
+  
+  # Baseline FE regression as lm with explicit FE dummies
+  lm_fe <- lm(
+    blue_share ~ irca_intensity*post + adj_share + country + year,
+    data = dat_wb
+  )
+  
+  cat("feols coef:", coef(fe_blue_net)["irca_intensity:post"], "\n")
+  cat("lm   coef:", coef(lm_fe)["irca_intensity:post"], "\n")
+  
+  # Wild cluster bootstrap on the interaction coefficient, clustered by country
+  wb <- fwildclusterboot::boottest(
+    object  = lm_fe,
+    clustid = "country",                 # for lm, column name works well
+    param   = "irca_intensity:post",
+    B       = 4999,
+    type    = "rademacher"
+  )
+  
+  sink("outputs/logs/wild_bootstrap_blue_net.txt")
+  cat("Wild cluster bootstrap test (lm FE version of baseline Net)\n")
+  print(wb)
+  sink()
+  
+  wb_tab <- tibble::tibble(
+    Model = "lm with country+year FE (dummies)",
+    Parameter = "IRCA intensity × Post",
+    `Bootstrap p-value` = wb$p_val,
+    `Bootstrap t-stat`  = wb$t_stat
+  )
+  
+  wb_tex <- knitr::kable(
+    wb_tab %>% dplyr::mutate(dplyr::across(where(is.numeric), ~ signif(.x, 4))),
+    format="latex", booktabs=TRUE,
+    caption="Wild cluster bootstrap inference using an lm FE version of the baseline model (robust to fixest parsing issues)."
+  )
+  write_tex(wb_tex, "outputs/tables/tab_wildboot_blue_net.tex")
+  
+} else {
+  warning("Packages 'fwildclusterboot' and/or 'dqrng' not installed. Skipping wild bootstrap inference.")
+}
+
+#### 18) Logs: run summary + sessionInfo ####
 run_summary <- c(
   paste0("n_rows = ", nrow(panel)),
   paste0("n_country_year = ", nrow(distinct(panel, country, year))),
