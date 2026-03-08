@@ -1,5 +1,5 @@
 ############################################################
-# run.R — IRCA project (FIXED + Portfolio-forward)
+# run.R — IRCA project
 # - Auto-detects raw Excel files
 # - Builds panel from raw files
 # - Runs main FE models + robustness + portfolio add-ons
