@@ -1,0 +1,7 @@
+Wild cluster bootstrap test (lm FE version of baseline Net)
+boottest.lm(object = lm_fe, param = "irca_intensity:post", B = 4999, 
+    clustid = "country", type = "rademacher")
+ 
+p value: 0.0336 
+confidence interval: -0.0624 -0.0021 
+test statistic -5.1539 

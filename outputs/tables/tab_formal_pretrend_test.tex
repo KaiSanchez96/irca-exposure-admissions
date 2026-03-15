@@ -1,0 +1,33 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={Pre-period only (<=1988). Country FE; SE clustered by country. Tests whether exposure predicts pre-trends.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]},
+hline{2}={1-2}{solid, black, 0.05em},
+hline{6}={1-2}{solid, black, 0.05em},
+hline{1}={1-2}{solid, black, 0.08em},
+hline{16}={1-2}{solid, black, 0.08em},
+column{2}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& (1) \\
+t & \num{0.004} \\
+& (\num{0.005}) \\
+irca\_intensity × t & \num{0.002} \\
+& (\num{0.002}) \\
+Num.Obs. & \num{132} \\
+R2 & \num{0.707} \\
+R2 Adj. & \num{0.654} \\
+R2 Within & \num{0.040} \\
+R2 Within Adj. & \num{0.023} \\
+AIC & \num{-276.7} \\
+BIC & \num{-216.2} \\
+RMSE & \num{0.07} \\
+Std.Errors & by: country \\
+FE: country & X \\
+\end{talltblr}
+\end{table}

@@ -1,0 +1,9 @@
+n_rows = 361
+n_country_year = 361
+n_countries = 19
+min_year = 1982
+max_year = 2000
+irca_intensity range = [0.00929, 8.83311]
+blue_share range = [0.04629, 0.7146]
+adj_share range = [0.059, 0.95863]
+balanced countries (net) = 17

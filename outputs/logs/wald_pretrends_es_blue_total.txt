@@ -1,0 +1,15 @@
+Wald joint pre-trends (years < 1988)
+H0: All pre-1988 exposure×year coefficients = 0
+
+stat: 13.53786 
+df1: 6 
+df2: 298 
+p: 1.377479e-13 
+
+Terms tested:
+year::1982:irca_intensity
+year::1983:irca_intensity
+year::1984:irca_intensity
+year::1985:irca_intensity
+year::1986:irca_intensity
+year::1987:irca_intensity

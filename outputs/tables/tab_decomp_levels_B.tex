@@ -1,0 +1,24 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={Country \& Year FE; SE clustered by country. Log specs use ln(1+x).},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]},
+hline{2}={1-5}{solid, black, 0.05em},
+hline{6}={1-5}{solid, black, 0.05em},
+hline{1}={1-5}{solid, black, 0.08em},
+hline{7}={1-5}{solid, black, 0.08em},
+column{2-5}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& ln(1+Blue) & ln(1+Occ known) & ln(1+Occ total) & ln(1+No-occ) \\
+IRCA × Post & \num{0.098}* & \num{0.192}*** & \num{0.131}*** & \num{0.056} \\
+& (\num{0.051}) & (\num{0.037}) & (\num{0.036}) & (\num{0.034}) \\
+Adjustment share & \num{1.092} & \num{0.776} & \num{0.608} & \num{0.224} \\
+& (\num{0.636}) & (\num{0.469}) & (\num{0.470}) & (\num{0.513}) \\
+Num.Obs. & \num{352} & \num{352} & \num{352} & \num{352} \\
+\end{talltblr}
+\end{table}

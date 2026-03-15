@@ -1,0 +1,25 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={Country \& Year FE; SE clustered by origin-country. Shares in [0,1]; coefficients are pp per one-unit exposure. Net specs include adjustment-of-status share. Exposure stats (country-level): mean = 1.476, SD = 2.119.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]Q[]},
+hline{2}={1-6}{solid, black, 0.05em},
+hline{6}={1-6}{solid, black, 0.05em},
+hline{1}={1-6}{solid, black, 0.08em},
+hline{8}={1-6}{solid, black, 0.08em},
+column{2-6}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& No-Occ & Family & Employment & Humanitarian & Other \\
+IRCA intensity × Post & \num{-0.025}*** & \num{-0.027}** & \num{-0.008} & \num{-0.016}** & \num{-0.009} \\
+& (\num{0.005}) & (\num{0.011}) & (\num{0.011}) & (\num{0.006}) & (\num{0.009}) \\
+Adjustment share & \num{-0.149}* & \num{-0.400}** & \num{-0.206} & \num{0.192}** & \num{0.108} \\
+& (\num{0.081}) & (\num{0.152}) & (\num{0.128}) & (\num{0.091}) & (\num{0.138}) \\
+Num.Obs. & \num{351} & \num{352} & \num{352} & \num{352} & \num{352} \\
+Mean of Y (share units) & \num{0.619} & \num{0.542} & \num{0.301} & \num{0.067} & \num{0.013} \\
+\end{talltblr}
+\end{table}

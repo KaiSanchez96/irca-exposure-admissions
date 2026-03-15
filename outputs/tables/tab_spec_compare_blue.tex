@@ -1,0 +1,24 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={Comparison of key robustness specifications for blue-collar share.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]},
+hline{2}={1-5}{solid, black, 0.05em},
+hline{6}={1-5}{solid, black, 0.05em},
+hline{1}={1-5}{solid, black, 0.08em},
+hline{7}={1-5}{solid, black, 0.08em},
+column{2-5}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& Baseline Net & Country trends & WLS admissions & Balanced Net \\
+IRCA × Post & \num{-0.036}*** & \num{-0.036}*** & \num{-0.036}*** & \num{-0.037}*** \\
+& (\num{0.007}) & (\num{0.008}) & (\num{0.003}) & (\num{0.007}) \\
+Adjustment share & \num{0.169}* & \num{0.160} & \num{0.150}** & \num{0.190}* \\
+& (\num{0.085}) & (\num{0.099}) & (\num{0.069}) & (\num{0.090}) \\
+Num.Obs. & \num{351} & \num{351} & \num{351} & \num{323} \\
+\end{talltblr}
+\end{table}

@@ -1,0 +1,24 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={Country \& Year FE; SE clustered by country. Pre-period only.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]},
+hline{2}={1-3}{solid, black, 0.05em},
+hline{6}={1-3}{solid, black, 0.05em},
+hline{1}={1-3}{solid, black, 0.08em},
+hline{7}={1-3}{solid, black, 0.08em},
+column{2-3}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& Fake post >= 1986 & Fake post >= 1987 \\
+Exposure × FakePost(86) & \num{0.007} &  \\
+& (\num{0.006}) &  \\
+Exposure × FakePost(87) &  & \num{0.006} \\
+&  & (\num{0.004}) \\
+Num.Obs. & \num{132} & \num{132} \\
+\end{talltblr}
+\end{table}

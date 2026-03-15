@@ -1,0 +1,21 @@
+Baseline correlation: mean blue_share (1982–1985) ~ IRCA intensity
+
+
+Call:
+lm(formula = pre_blue ~ irca_intensity, data = baseline_check)
+
+Residuals:
+      Min        1Q    Median        3Q       Max 
+-0.170069 -0.049567  0.004576  0.040606  0.129771 
+
+Coefficients:
+               Estimate Std. Error t value Pr(>|t|)    
+(Intercept)     0.28116    0.02366  11.883 1.17e-09 ***
+irca_intensity  0.02601    0.00933   2.788   0.0126 *  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 0.08388 on 17 degrees of freedom
+Multiple R-squared:  0.3137,	Adjusted R-squared:  0.2733 
+F-statistic:  7.77 on 1 and 17 DF,  p-value: 0.01263
+

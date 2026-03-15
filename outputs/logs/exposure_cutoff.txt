@@ -1,0 +1,1 @@
+Exposure median cutoff used for irca_group = 0.736091

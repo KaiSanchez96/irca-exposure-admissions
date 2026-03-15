@@ -1,0 +1,28 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={Country \& Year FE; SE clustered by country. Exposure quartiles at country level; Q1 omitted.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]},
+hline{2}={1-2}{solid, black, 0.05em},
+hline{10}={1-2}{solid, black, 0.05em},
+hline{1}={1-2}{solid, black, 0.08em},
+hline{11}={1-2}{solid, black, 0.08em},
+column{2}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& Blue (Net) bins \\
+Post × Q2 & \num{-0.006} \\
+& (\num{0.016}) \\
+Post × Q3 & \num{-0.022} \\
+& (\num{0.022}) \\
+Post × Q4 & \num{-0.134}** \\
+& (\num{0.049}) \\
+Adjustment share & \num{0.103} \\
+& (\num{0.085}) \\
+Num.Obs. & \num{351} \\
+\end{talltblr}
+\end{table}

@@ -1,0 +1,24 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={All models: Country \& Year FE; SE clustered by country. Outcome: blue\_share.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]},
+hline{2}={1-5}{solid, black, 0.05em},
+hline{6}={1-5}{solid, black, 0.05em},
+hline{1}={1-5}{solid, black, 0.08em},
+hline{7}={1-5}{solid, black, 0.08em},
+column{2-5}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& Baseline Net & Drop 1995–1997 & Drop UY+PY & Window 1982–1995 \\
+IRCA × Post & \num{-0.036}*** & \num{-0.042}*** & \num{-0.037}*** & \num{-0.037}*** \\
+& (\num{0.007}) & (\num{0.008}) & (\num{0.007}) & (\num{0.008}) \\
+Adjustment share & \num{0.169}* & \num{0.224}** & \num{0.190}* & \num{0.182}* \\
+& (\num{0.085}) & (\num{0.092}) & (\num{0.090}) & (\num{0.092}) \\
+Num.Obs. & \num{351} & \num{300} & \num{323} & \num{260} \\
+\end{talltblr}
+\end{table}

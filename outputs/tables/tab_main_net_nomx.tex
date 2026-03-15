@@ -1,0 +1,24 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={Country \& Year FE; SE clustered by origin-country. Mexico excluded.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]},
+hline{2}={1-11}{solid, black, 0.05em},
+hline{6}={1-11}{solid, black, 0.05em},
+hline{1}={1-11}{solid, black, 0.08em},
+hline{7}={1-11}{solid, black, 0.08em},
+column{2-11}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& Blue & Agri & Manual & Services & White & No-Occ & Family & Employment & Humanitarian & Other \\
+IRCA intensity × Post & \num{-0.028}** & \num{0.031}** & \num{0.003} & \num{-0.011} & \num{0.009} & \num{-0.038}*** & \num{-0.013} & \num{-0.037}** & \num{-0.024}** & \num{-0.016} \\
+& (\num{0.013}) & (\num{0.012}) & (\num{0.011}) & (\num{0.007}) & (\num{0.015}) & (\num{0.009}) & (\num{0.018}) & (\num{0.014}) & (\num{0.009}) & (\num{0.016}) \\
+Adjustment share & \num{0.163} & \num{0.003} & \num{0.166} & \num{-0.005} & \num{-0.160} & \num{-0.189}** & \num{-0.450}** & \num{-0.184} & \num{0.205}* & \num{0.140} \\
+& (\num{0.106}) & (\num{0.033}) & (\num{0.101}) & (\num{0.031}) & (\num{0.109}) & (\num{0.072}) & (\num{0.169}) & (\num{0.142}) & (\num{0.106}) & (\num{0.162}) \\
+Num.Obs. & \num{332} & \num{332} & \num{332} & \num{332} & \num{332} & \num{332} & \num{333} & \num{333} & \num{333} & \num{333} \\
+\end{talltblr}
+\end{table}

@@ -1,0 +1,24 @@
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={* p \num{< 0.1}, ** p \num{< 0.05}, *** p \num{< 0.01}},
+note{ }={Country \& Year FE; SE clustered by country. Levels are counts.},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]},
+hline{2}={1-5}{solid, black, 0.05em},
+hline{6}={1-5}{solid, black, 0.05em},
+hline{1}={1-5}{solid, black, 0.08em},
+hline{7}={1-5}{solid, black, 0.08em},
+column{2-5}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& Blue level & Occ known level & Occ total level & No-occ level \\
+IRCA × Post & \num{9682.575}*** & \num{39226.652}*** & \num{43404.916}*** & \num{4178.264}*** \\
+& (\num{2342.817}) & (\num{9956.342}) & (\num{10418.047}) & (\num{561.725}) \\
+Adjustment share & \num{-973.413} & \num{-18202.159} & \num{-204.179} & \num{17997.980} \\
+& (\num{5699.283}) & (\num{21227.495}) & (\num{32984.662}) & (\num{17559.005}) \\
+Num.Obs. & \num{352} & \num{352} & \num{352} & \num{352} \\
+\end{talltblr}
+\end{table}

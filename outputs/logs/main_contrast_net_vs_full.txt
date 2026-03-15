@@ -1,0 +1,3 @@
+Main contrast (same sample): IRCA×Post coefficient
+Net denom  (blue_share):   -0.0359
+Full denom (blue_fullden): -0.005353
