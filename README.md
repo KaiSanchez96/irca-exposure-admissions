@@ -1,4 +1,4 @@
-# # When a KPI Lies
+## When a KPI Lies
 
 A data analyst case study on denominator sensitivity in U.S. immigration admissions data.
 
